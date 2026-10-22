@@ -16,15 +16,15 @@ class CalendarSyncApplier @Inject constructor(
 
     suspend fun apply(operation: SyncOperation): Boolean {
         if (operationRepository.get(operation.operationId) != null) return true
-        val accepted = database.withTransaction {
-            when (operation.entityType) {
+        return database.withTransaction {
+            val accepted = when (operation.entityType) {
                 "calendar_event" -> applyEvent(operation)
                 "calendar_place" -> applyPlace(operation)
                 else -> false
             }
+            if (accepted) operationRepository.record(operation.copy(applied = true))
+            accepted
         }
-        if (accepted) operationRepository.record(operation.copy(applied = true))
-        return accepted
     }
 
     private suspend fun applyEvent(operation: SyncOperation): Boolean {

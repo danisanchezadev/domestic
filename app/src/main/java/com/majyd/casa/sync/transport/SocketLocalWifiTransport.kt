@@ -2,6 +2,8 @@ package com.majyd.casa.sync.transport
 
 import com.majyd.casa.sync.SyncOperation
 import java.io.BufferedReader
+import java.io.EOFException
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.ServerSocket
@@ -36,18 +38,18 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
             val writer = PrintWriter(socket.getOutputStream(), true)
             val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
             val clientNonce = SyncCrypto.nonce()
-            writer.println(HELLO_PREFIX + localDeviceId + HELLO_SEPARATOR + clientNonce)
+            writeLine(writer, HELLO_PREFIX + localDeviceId + HELLO_SEPARATOR + clientNonce)
             onProgress(TransportPhase.AUTHENTICATING)
-            val challenge = reader.readLine().orEmpty()
+            val challenge = readRequiredLine(reader, "challenge")
             require(challenge.startsWith(CHALLENGE_PREFIX)) { "Handshake inválido" }
             val serverNonce = challenge.removePrefix(CHALLENGE_PREFIX)
-            writer.println(RESPONSE_PREFIX + crypto.proof(clientNonce, serverNonce))
-            if (reader.readLine() != AUTH_OK) {
+            writeLine(writer, RESPONSE_PREFIX + crypto.proof(clientNonce, serverNonce))
+            if (readRequiredLine(reader, "auth response") != AUTH_OK) {
                 throw SecurityException("Código de emparejamiento incorrecto")
             }
             onProgress(TransportPhase.SYNCHRONIZING)
-            operations.forEach { writer.println(crypto.encrypt(json.encodeToString(it))) }
-            writer.println(END_MARKER)
+            operations.forEach { writeLine(writer, crypto.encrypt(json.encodeToString(it))) }
+            writeLine(writer, END_MARKER)
             readOperations(reader, crypto)
         }
     }
@@ -68,40 +70,44 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
                 socket.soTimeout = READ_TIMEOUT_MS
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
                 val writer = PrintWriter(socket.getOutputStream(), true)
-                val hello = reader.readLine().orEmpty()
+                val hello = readRequiredLine(reader, "hello")
                 if (!hello.startsWith(HELLO_PREFIX)) {
-                    writer.println(AUTH_FAILED)
-                    writer.println(END_MARKER)
+                    writeLine(writer, AUTH_FAILED)
+                    writeLine(writer, END_MARKER)
                     return@use 0
                 }
                 val helloParts = hello.removePrefix(HELLO_PREFIX).split(HELLO_SEPARATOR, limit = 2)
                 if (helloParts.size != 2 || helloParts[0].isBlank() || helloParts[1].isBlank()) {
-                    writer.println(AUTH_FAILED)
-                    writer.println(END_MARKER)
+                    writeLine(writer, AUTH_FAILED)
+                    writeLine(writer, END_MARKER)
                     return@use 0
                 }
                 val remoteDeviceId = helloParts[0]
                 val clientNonce = helloParts[1]
                 val serverNonce = SyncCrypto.nonce()
-                writer.println(CHALLENGE_PREFIX + serverNonce)
-                val response = reader.readLine().orEmpty().removePrefix(RESPONSE_PREFIX)
+                writeLine(writer, CHALLENGE_PREFIX + serverNonce)
+                val response = readRequiredLine(reader, "auth response").removePrefix(RESPONSE_PREFIX)
                 val crypto = SyncCrypto(authToken)
                 if (!SyncCrypto.constantTimeEquals(response, crypto.proof(clientNonce, serverNonce))) {
-                    writer.println(AUTH_FAILED)
-                    writer.println(END_MARKER)
+                    writeLine(writer, AUTH_FAILED)
+                    writeLine(writer, END_MARKER)
                     return@use 0
                 }
                 if (!authorization(remoteDeviceId)) {
-                    writer.println(AUTH_FAILED)
-                    writer.println(END_MARKER)
+                    writeLine(writer, AUTH_FAILED)
+                    writeLine(writer, END_MARKER)
                     return@use 0
                 }
                 onAuthorized(remoteDeviceId)
-                writer.println(AUTH_OK)
+                writeLine(writer, AUTH_OK)
+                var endReceived = false
                 val acknowledgements = buildList {
                     while (true) {
-                        val line = reader.readLine() ?: break
-                        if (line == END_MARKER) break
+                        val line = readRequiredLine(reader, "operation stream")
+                        if (line == END_MARKER) {
+                            endReceived = true
+                            break
+                        }
                         if (line.length > MAX_LINE_LENGTH) {
                             throw IllegalArgumentException("Operacion de sincronizacion demasiado grande")
                         }
@@ -116,21 +122,26 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
                         if (operationHandler(operation)) add(operation.copy(applied = true))
                     }
                 }
-                acknowledgements.forEach { writer.println(crypto.encrypt(json.encodeToString(it))) }
+                check(endReceived) { "Transferencia incompleta: falta el marcador final" }
+                acknowledgements.forEach { writeLine(writer, crypto.encrypt(json.encodeToString(it))) }
                 val acknowledgedIds = acknowledgements.mapTo(hashSetOf()) { it.operationId }
                 operationProvider()
                     .filterNot { it.operationId in acknowledgedIds }
-                    .forEach { writer.println(crypto.encrypt(json.encodeToString(it))) }
-                writer.println(END_MARKER)
+                    .forEach { writeLine(writer, crypto.encrypt(json.encodeToString(it))) }
+                writeLine(writer, END_MARKER)
                 acknowledgements.size
             }
         }
     }
 
     private fun readOperations(reader: BufferedReader, crypto: SyncCrypto): List<SyncOperation> = buildList {
+        var endReceived = false
         while (true) {
-            val line = reader.readLine() ?: break
-            if (line == END_MARKER) break
+            val line = readRequiredLine(reader, "response stream")
+            if (line == END_MARKER) {
+                endReceived = true
+                break
+            }
             if (line == AUTH_FAILED) throw SecurityException("Código de emparejamiento incorrecto")
             if (line == AUTH_OK) continue
             if (line.length > MAX_LINE_LENGTH) {
@@ -141,6 +152,17 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
             } catch (error: Exception) {
                 throw IllegalArgumentException("Payload de sincronizacion invalido", error)
             }
+        }
+        check(endReceived) { "Transferencia incompleta: falta el marcador final" }
+    }
+
+    private fun readRequiredLine(reader: BufferedReader, stage: String): String =
+        reader.readLine() ?: throw EOFException("Conexión cerrada durante $stage")
+
+    private fun writeLine(writer: PrintWriter, line: String) {
+        writer.println(line)
+        if (writer.checkError()) {
+            throw IOException("No se pudo escribir en la conexión de sincronización")
         }
     }
 

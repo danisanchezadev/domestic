@@ -13,6 +13,7 @@ data class ShoppingListSyncPayload(
     val version: Long,
     val createdAt: Long,
     val updatedAt: Long,
+    val updatedByDevice: String = "",
 )
 
 @Serializable
@@ -51,6 +52,7 @@ data class ShoppingCatalogSyncPayload(
     val createdAt: Long,
     val updatedAt: Long,
     val deleted: Boolean,
+    val updatedByDevice: String = "",
 )
 
 object ShoppingSyncPayloadCodec {

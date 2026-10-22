@@ -56,20 +56,19 @@ class RoomHouseholdRepository @Inject constructor(
 
     override suspend fun ensureDefaults(): HouseholdState {
         val device = deviceDao.getDevice() ?: return HouseholdState()
-        val existing = householdDao.observePeople(device.householdId).first()
-        if (existing.isEmpty()) {
-            val now = System.currentTimeMillis()
-            listOf(
-                DEFAULT_PERSON_ONE_ID to "Persona 1",
-                DEFAULT_PERSON_TWO_ID to "Persona 2",
-            ).forEach { (id, name) ->
-                val person = PersonEntity(id, device.householdId, name, Normalizer.normalizeText(name), false, now, now, 1)
-                householdDao.upsertPerson(person)
-                // Stable bootstrap records let a newly paired device receive the initial people.
-                enqueuePerson(person, "CREATE")
-            }
-            return observeState().first { state ->
-                state.householdId == device.householdId && state.people.isNotEmpty()
+        database.withTransaction {
+            val existing = householdDao.observePeople(device.householdId).first()
+            if (existing.isEmpty()) {
+                val now = System.currentTimeMillis()
+                listOf(
+                    DEFAULT_PERSON_ONE_ID to "Persona 1",
+                    DEFAULT_PERSON_TWO_ID to "Persona 2",
+                ).forEach { (id, name) ->
+                    val person = PersonEntity(id, device.householdId, name, Normalizer.normalizeText(name), false, now, now, 1, device.deviceId)
+                    householdDao.upsertPerson(person)
+                    // Stable bootstrap records let a newly paired device receive the initial people.
+                    enqueuePerson(person, "CREATE")
+                }
             }
         }
         return observeState().first()
@@ -80,9 +79,11 @@ class RoomHouseholdRepository @Inject constructor(
         if (clean.isBlank()) return null
         val device = deviceDao.getDevice() ?: return null
         val now = System.currentTimeMillis()
-        val entity = PersonEntity(UUID.randomUUID().toString(), device.householdId, clean, Normalizer.normalizeText(clean), false, now, now, 1)
-        householdDao.upsertPerson(entity)
-        enqueuePerson(entity, "CREATE")
+        val entity = PersonEntity(UUID.randomUUID().toString(), device.householdId, clean, Normalizer.normalizeText(clean), false, now, now, 1, device.deviceId)
+        database.withTransaction {
+            householdDao.upsertPerson(entity)
+            enqueuePerson(entity, "CREATE")
+        }
         return entity.toModel()
     }
 
@@ -91,9 +92,11 @@ class RoomHouseholdRepository @Inject constructor(
         val clean = name.trim()
         if (clean.isBlank()) return current.toModel()
         val now = System.currentTimeMillis()
-        database.withTransaction { householdDao.renamePerson(personId, clean, Normalizer.normalizeText(clean), now) }
         val updated = current.copy(name = clean, normalizedName = Normalizer.normalizeText(clean), updatedAt = now, version = current.version + 1)
-        enqueuePerson(updated, "UPDATE")
+        database.withTransaction {
+            householdDao.upsertPerson(updated)
+            enqueuePerson(updated, "UPDATE")
+        }
         return updated.toModel()
     }
 
@@ -112,10 +115,12 @@ class RoomHouseholdRepository @Inject constructor(
                 deviceDao.assignPerson(device.deviceId, null, now)
             }
             updatedGroups.forEach { householdDao.upsertGroup(it) }
+            enqueuePerson(current.copy(deleted = true, updatedAt = now, version = current.version + 1), "DELETE")
+            updatedGroups.forEach { group ->
+                enqueueGroup(group, householdDao.getMembers(group.id).map { it.personId }, "UPDATE")
+            }
         }
-        enqueuePerson(current.copy(deleted = true, updatedAt = now, version = current.version + 1), "DELETE")
         updatedGroups.forEach { group ->
-            enqueueGroup(group, householdDao.getMembers(group.id).map { it.personId }, "UPDATE")
             refreshGroupNotifications(group.id)
         }
         return PersonDeletionResult(deleted = true, activeTaskCount = 0)
@@ -195,12 +200,12 @@ class RoomHouseholdRepository @Inject constructor(
         val device = deviceDao.getDevice() ?: return null
         if (clean.isBlank()) return null
         val now = System.currentTimeMillis()
-        val entity = HouseholdGroupEntity(UUID.randomUUID().toString(), device.householdId, clean, Normalizer.normalizeText(clean), false, now, now, 1)
+        val entity = HouseholdGroupEntity(UUID.randomUUID().toString(), device.householdId, clean, Normalizer.normalizeText(clean), false, now, now, 1, device.deviceId)
         database.withTransaction {
             householdDao.upsertGroup(entity)
             replaceMembers(entity.id, memberIds, now)
+            enqueueGroup(entity, memberIds, "CREATE")
         }
-        enqueueGroup(entity, memberIds, "CREATE")
         return HouseholdGroup(entity.id, entity.householdId, entity.name, memberIds, now)
     }
 
@@ -209,11 +214,13 @@ class RoomHouseholdRepository @Inject constructor(
         val clean = name.trim()
         if (clean.isBlank()) return null
         val now = System.currentTimeMillis()
-        householdDao.renameGroup(groupId, clean, Normalizer.normalizeText(clean), now)
         val updated = current.copy(name = clean, normalizedName = Normalizer.normalizeText(clean), updatedAt = now, version = current.version + 1)
-        householdDao.upsertGroup(updated)
-        enqueueGroup(updated, householdDao.getMembers(groupId).map { it.personId }, "UPDATE")
-        return HouseholdGroup(current.id, current.householdId, clean, householdDao.getMembers(groupId).map { it.personId }.toSet(), now)
+        val memberIds = householdDao.getMembers(groupId).map { it.personId }.toSet()
+        database.withTransaction {
+            householdDao.upsertGroup(updated)
+            enqueueGroup(updated, memberIds, "UPDATE")
+        }
+        return HouseholdGroup(current.id, current.householdId, clean, memberIds, now)
     }
 
     override suspend fun setGroupMembers(groupId: String, memberIds: Set<String>): HouseholdGroup? {
@@ -223,8 +230,8 @@ class RoomHouseholdRepository @Inject constructor(
         database.withTransaction {
             householdDao.upsertGroup(updated)
             replaceMembers(groupId, memberIds, now)
+            enqueueGroup(updated, memberIds, "UPDATE")
         }
-        enqueueGroup(updated, memberIds, "UPDATE")
         refreshGroupNotifications(groupId)
         return HouseholdGroup(current.id, current.householdId, current.name, memberIds, now)
     }
@@ -233,8 +240,11 @@ class RoomHouseholdRepository @Inject constructor(
         val current = householdDao.getGroup(groupId) ?: return null
         val now = System.currentTimeMillis()
         val memberIds = householdDao.getMembers(groupId).map { it.personId }.toSet()
-        householdDao.deleteGroup(groupId, now)
-        enqueueGroup(current.copy(deleted = true, updatedAt = now, version = current.version + 1), memberIds, "DELETE")
+        database.withTransaction {
+            val deleted = current.copy(deleted = true, updatedAt = now, version = current.version + 1)
+            householdDao.upsertGroup(deleted)
+            enqueueGroup(deleted, memberIds, "DELETE")
+        }
         refreshGroupNotifications(groupId)
         return HouseholdGroup(current.id, current.householdId, current.name, memberIds, now)
     }
@@ -259,12 +269,12 @@ class RoomHouseholdRepository @Inject constructor(
 
     private suspend fun enqueuePerson(entity: PersonEntity, operationType: String) {
         val device = deviceDao.getDevice() ?: return
-        syncOperationRepository.enqueue(device.householdId, device.deviceId, "person", entity.id, HouseholdSyncPayloadCodec.encode(PersonSyncPayload(entity.id, entity.householdId, entity.name, entity.deleted, entity.createdAt, entity.updatedAt, entity.version)), entity.version, entity.updatedAt, entity.deleted, operationType)
+        syncOperationRepository.enqueue(device.householdId, device.deviceId, "person", entity.id, HouseholdSyncPayloadCodec.encode(PersonSyncPayload(entity.id, entity.householdId, entity.name, entity.deleted, entity.createdAt, entity.updatedAt, entity.version, entity.updatedByDevice)), entity.version, entity.updatedAt, entity.deleted, operationType)
     }
 
     private suspend fun enqueueGroup(entity: HouseholdGroupEntity, memberIds: Collection<String>, operationType: String) {
         val device = deviceDao.getDevice() ?: return
-        syncOperationRepository.enqueue(device.householdId, device.deviceId, "group", entity.id, HouseholdSyncPayloadCodec.encode(GroupSyncPayload(entity.id, entity.householdId, entity.name, memberIds.toList(), entity.deleted, entity.createdAt, entity.updatedAt, entity.version)), entity.version, entity.updatedAt, entity.deleted, operationType)
+        syncOperationRepository.enqueue(device.householdId, device.deviceId, "group", entity.id, HouseholdSyncPayloadCodec.encode(GroupSyncPayload(entity.id, entity.householdId, entity.name, memberIds.toList(), entity.deleted, entity.createdAt, entity.updatedAt, entity.version, entity.updatedByDevice)), entity.version, entity.updatedAt, entity.deleted, operationType)
     }
 
     private fun PersonEntity.toModel() = Person(id, householdId, name, updatedAt)

@@ -55,7 +55,7 @@ import com.majyd.casa.data.local.entities.CalendarPlaceEntity
         ContactCategoryEntity::class,
         CalendarPlaceEntity::class,
     ],
-    version = 23,
+    version = 24,
     exportSchema = true,
 )
 abstract class CasaDatabase : RoomDatabase() {

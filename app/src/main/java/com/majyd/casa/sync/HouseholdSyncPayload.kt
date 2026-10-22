@@ -13,6 +13,7 @@ data class PersonSyncPayload(
     val createdAt: Long,
     val updatedAt: Long,
     val version: Long,
+    val updatedByDevice: String = "",
 )
 
 @Serializable
@@ -25,6 +26,7 @@ data class GroupSyncPayload(
     val createdAt: Long,
     val updatedAt: Long,
     val version: Long,
+    val updatedByDevice: String = "",
 )
 
 object HouseholdSyncPayloadCodec {

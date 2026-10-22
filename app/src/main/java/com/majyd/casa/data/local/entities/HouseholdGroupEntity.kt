@@ -16,4 +16,5 @@ data class HouseholdGroupEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val version: Long,
+    val updatedByDevice: String = "",
 )

@@ -99,6 +99,21 @@ class RoomContactRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val entity = ContactCategoryEntity(current?.id ?: UUID.randomUUID().toString(), device.householdId, cleanName, Normalizer.normalizeText(cleanName), false, current?.createdAt ?: now, now, (current?.version ?: 0) + 1, device.deviceId)
         categoryDao.upsert(entity)
+        if (current != null && current.name != cleanName) {
+            // Contacts store the category name for a compact local model. Keep that denormalized value consistent.
+            contactDao.observeAll().first()
+                .filter { it.category == current.name }
+                .forEach { contact ->
+                    val updatedContact = contact.copy(
+                        category = cleanName,
+                        updatedAt = now,
+                        version = contact.version + 1,
+                        updatedByDevice = device.deviceId,
+                    )
+                    contactDao.upsert(updatedContact)
+                    enqueue(updatedContact, "UPDATE")
+                }
+        }
         enqueueCategory(entity, if (current == null) "CREATE" else "UPDATE")
         entity.toModel()
     }

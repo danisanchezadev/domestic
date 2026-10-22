@@ -66,10 +66,10 @@ class RoomShoppingRepository @Inject constructor(
             }
         }
 
-    override suspend fun addCatalogItem(name: String) {
+    override suspend fun addCatalogItem(name: String) = database.withTransaction {
         val cleanName = name.trim()
         val normalizedName = Normalizer.normalizeText(cleanName)
-        if (normalizedName.isBlank()) return
+        if (normalizedName.isBlank()) return@withTransaction
         val existing = catalogDao.getByNameIncludingDeleted(normalizedName)
         if (existing != null) {
             if (existing.deleted) {
@@ -77,9 +77,10 @@ class RoomShoppingRepository @Inject constructor(
                 catalogDao.upsert(restored)
                 enqueueCatalog(restored, "RESTORE")
             }
-            return
+            return@withTransaction
         }
         val now = System.currentTimeMillis()
+        val device = deviceManager.ensureDevice()
         val entry = ShoppingCatalogEntity(
                 id = UUID.randomUUID().toString(),
                 normalizedName = normalizedName,
@@ -92,44 +93,49 @@ class RoomShoppingRepository @Inject constructor(
                 createdAt = now,
                 updatedAt = now,
                 deleted = false,
+                updatedByDevice = device.deviceId,
             )
         catalogDao.upsert(entry)
         enqueueCatalog(entry, "CREATE")
     }
 
-    override suspend fun updateCatalogItem(currentName: String, newName: String) {
+    override suspend fun updateCatalogItem(currentName: String, newName: String) = database.withTransaction {
         val cleanName = newName.trim()
         val normalizedName = Normalizer.normalizeText(cleanName)
-        if (normalizedName.isBlank()) return
-        val current = catalogDao.getByNameIncludingDeleted(currentName) ?: return
+        if (normalizedName.isBlank()) return@withTransaction
+        val current = catalogDao.getByNameIncludingDeleted(currentName) ?: return@withTransaction
         val duplicate = catalogDao.getByNameIncludingDeleted(normalizedName)
         if (duplicate != null && duplicate.id != current.id) {
-            if (!duplicate.deleted) return
-            catalogDao.upsert(current.copy(deleted = true, updatedAt = System.currentTimeMillis()))
-            enqueueCatalog(current.copy(deleted = true, updatedAt = System.currentTimeMillis()), "DELETE")
+            if (!duplicate.deleted) return@withTransaction
+            val now = System.currentTimeMillis()
+            val device = deviceManager.ensureDevice()
+            catalogDao.upsert(current.copy(deleted = true, updatedAt = now, updatedByDevice = device.deviceId))
+            enqueueCatalog(current.copy(deleted = true, updatedAt = now, updatedByDevice = device.deviceId), "DELETE")
             catalogDao.upsert(
                 duplicate.copy(
                     displayName = cleanName,
                     updatedAt = System.currentTimeMillis(),
                     deleted = false,
+                    updatedByDevice = device.deviceId,
                 )
             )
-            enqueueCatalog(duplicate.copy(displayName = cleanName, updatedAt = System.currentTimeMillis(), deleted = false), "UPDATE")
-            return
+            enqueueCatalog(duplicate.copy(displayName = cleanName, updatedAt = now, deleted = false, updatedByDevice = device.deviceId), "UPDATE")
+            return@withTransaction
         }
         val updated = current.copy(
                 normalizedName = normalizedName,
                 displayName = cleanName,
                 updatedAt = System.currentTimeMillis(),
                 deleted = false,
+                updatedByDevice = deviceManager.ensureDevice().deviceId,
             )
         catalogDao.upsert(updated)
         enqueueCatalog(updated, "UPDATE")
     }
 
-    override suspend fun deleteCatalogItem(name: String) {
-        val current = catalogDao.getByNameIncludingDeleted(Normalizer.normalizeText(name)) ?: return
-        val deleted = current.copy(deleted = true, updatedAt = System.currentTimeMillis())
+    override suspend fun deleteCatalogItem(name: String) = database.withTransaction {
+        val current = catalogDao.getByNameIncludingDeleted(Normalizer.normalizeText(name)) ?: return@withTransaction
+        val deleted = current.copy(deleted = true, updatedAt = System.currentTimeMillis(), updatedByDevice = deviceManager.ensureDevice().deviceId)
         catalogDao.upsert(deleted)
         enqueueCatalog(deleted, "DELETE")
     }
@@ -148,7 +154,8 @@ class RoomShoppingRepository @Inject constructor(
             .forEach { enqueueCatalog(it, if (it.deleted) "DELETE" else "CREATE") }
     }
 
-    override suspend fun ensureDefaults() {
+    override suspend fun ensureDefaults() = database.withTransaction {
+        val device = deviceManager.ensureDevice()
         if (listDao.getById(DEFAULT_LIST_ID) == null) {
             val now = System.currentTimeMillis()
             listDao.upsert(
@@ -160,6 +167,7 @@ class RoomShoppingRepository @Inject constructor(
                     version = 1,
                     createdAt = now,
                     updatedAt = now,
+                    updatedByDevice = device.deviceId,
                 )
             )
         }
@@ -186,7 +194,7 @@ class RoomShoppingRepository @Inject constructor(
         }
     }
 
-    override suspend fun createList(name: String): ShoppingList {
+    override suspend fun createList(name: String): ShoppingList = database.withTransaction {
         val now = System.currentTimeMillis()
         val entity = ShoppingListEntity(
             id = UUID.randomUUID().toString(),
@@ -196,10 +204,11 @@ class RoomShoppingRepository @Inject constructor(
             version = 1,
             createdAt = now,
             updatedAt = now,
+            updatedByDevice = deviceManager.ensureDevice().deviceId,
         )
         listDao.upsert(entity)
         enqueueList(entity, "CREATE", deviceManager.ensureDevice().householdId)
-        return entity.toModel()
+        entity.toModel()
     }
 
     override suspend fun upsertProduct(
@@ -318,7 +327,7 @@ class RoomShoppingRepository @Inject constructor(
             deviceId = deviceManager.ensureDevice().deviceId,
             entityType = "shopping_list",
             entityId = entity.id,
-            payload = ShoppingSyncPayloadCodec.encodeList(ShoppingListSyncPayload(entity.id, householdId, entity.name, entity.sortOrder, entity.deleted, entity.version, entity.createdAt, entity.updatedAt)),
+            payload = ShoppingSyncPayloadCodec.encodeList(ShoppingListSyncPayload(entity.id, householdId, entity.name, entity.sortOrder, entity.deleted, entity.version, entity.createdAt, entity.updatedAt, entity.updatedByDevice)),
             version = entity.version,
             updatedAt = entity.updatedAt,
             deleted = entity.deleted,
@@ -365,6 +374,7 @@ class RoomShoppingRepository @Inject constructor(
                     entity.createdAt,
                     entity.updatedAt,
                     entity.deleted,
+                    entity.updatedByDevice,
                 )
             ),
             version = entity.updatedAt,
@@ -391,6 +401,7 @@ class RoomShoppingRepository @Inject constructor(
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
                 deleted = false,
+                updatedByDevice = product.updatedByDevice,
             )
         catalogDao.upsert(updated)
         enqueueCatalog(updated, "UPDATE")

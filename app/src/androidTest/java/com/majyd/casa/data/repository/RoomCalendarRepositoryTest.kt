@@ -5,6 +5,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.majyd.casa.data.local.database.CasaDatabase
 import com.majyd.casa.data.model.CalendarEventItem
+import com.majyd.casa.sync.DefaultDeviceManager
+import com.majyd.casa.sync.RoomSyncOperationRepository
+import com.majyd.casa.sync.SyncChangeNotifier
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -28,6 +31,9 @@ class RoomCalendarRepositoryTest {
         repository = RoomCalendarRepository(
             database = database,
             calendarDao = database.calendarDao(),
+            placeDao = database.calendarPlaceDao(),
+            deviceManager = DefaultDeviceManager(RoomDeviceRepository(database.deviceDao())),
+            syncOperationRepository = RoomSyncOperationRepository(database.syncOperationDao(), SyncChangeNotifier()),
         )
     }
 
@@ -56,7 +62,7 @@ class RoomCalendarRepositoryTest {
             startAt = now + 86_400_000L,
             endAt = now + 86_400_000L + 3_600_000L,
             allDay = false,
-            reminderMinutesBefore = 45,
+            reminderDaysBefore = 1,
         )
 
         val deleted = repository.deleteEvent(created.id)

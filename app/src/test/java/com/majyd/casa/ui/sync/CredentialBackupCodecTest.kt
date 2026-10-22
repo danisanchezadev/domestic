@@ -3,6 +3,7 @@ package com.majyd.casa.ui.sync
 import com.majyd.casa.sync.SyncOperation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CredentialBackupCodecTest {
@@ -17,6 +18,7 @@ class CredentialBackupCodecTest {
         )
         val encoded = CredentialBackupCodec.encode(original)
 
+        assertTrue(encoded.startsWith("CASA_BACKUP_V2:"))
         assertEquals(original, CredentialBackupCodec.decode(encoded, "123456"))
         assertThrows(Exception::class.java) { CredentialBackupCodec.decode(encoded, "000000") }
     }

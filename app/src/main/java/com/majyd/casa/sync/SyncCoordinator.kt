@@ -11,11 +11,14 @@ import com.majyd.casa.sync.transport.WifiNetworkPolicy
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
@@ -27,8 +30,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.FlowPreview
 
 @Singleton
+@OptIn(FlowPreview::class)
 class SyncCoordinator @Inject constructor(
     private val deviceManager: DeviceManager,
     private val discovery: NsdDeviceDiscovery,
@@ -51,10 +56,11 @@ class SyncCoordinator @Inject constructor(
             val device = deviceManager.ensureDevice()
             shoppingRepository.ensureCatalogSyncOperations()
             launch {
-                changeNotifier.changes.collect {
-                    kotlinx.coroutines.delay(AUTO_SYNC_DEBOUNCE_MS)
-                    runCatching { synchronizeAutomatically() }
-                }
+                changeNotifier.changes
+                    .debounce(AUTO_SYNC_DEBOUNCE_MS)
+                    .collect {
+                        synchronizeAutomatically()
+                    }
             }
             authorizedDeviceDao.upsert(
                 AuthorizedDeviceEntity(device.deviceId, device.householdId, device.displayName, System.currentTimeMillis())
@@ -75,8 +81,8 @@ class SyncCoordinator @Inject constructor(
                     }
             }
             launch {
-                while (true) {
-                    runCatching {
+                while (currentCoroutineContext().isActive) {
+                    try {
                         transport.acceptOnce(
                             port = PORT,
                             authToken = settingsRepository.getPairingCode(),
@@ -123,37 +129,55 @@ class SyncCoordinator @Inject constructor(
                                 )
                             },
                         )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        // The listener is long-lived; a broken peer must not stop it.
                     }
                     delay(RETRY_DELAY_MS)
                 }
             }
-            discovery.discover()
-                .catch { delay(RETRY_DELAY_MS) }
-                .collectLatest { devices ->
-                    val current = deviceManager.ensureDevice()
-                    val peers = devices.filter {
-                        it.householdId == current.householdId &&
-                            wifiNetworkPolicy.isAllowed(settingsRepository.preferences.first().domesticWifiSsid) &&
-                            it.host.isNotBlank() &&
-                            it.deviceId != current.deviceId
-                    }
-                    _nearbyDevices.value = peers
-                    peers.forEach { peer ->
-                        mutex.withLock {
-                            runCatching {
-                                syncSession.synchronize(
-                                    peer.host,
-                                    peer.port,
-                                    current.householdId,
-                                    settingsRepository.getPairingCode(),
-                                )
-                                authorizedDeviceDao.upsert(
-                                    AuthorizedDeviceEntity(peer.deviceId ?: peer.serviceName, current.householdId, peer.serviceName, System.currentTimeMillis())
-                                )
+            while (currentCoroutineContext().isActive) {
+                try {
+                    discovery.discover().collectLatest { devices ->
+                        val current = deviceManager.ensureDevice()
+                        val peers = devices.filter {
+                            it.householdId == current.householdId &&
+                                wifiNetworkPolicy.isAllowed(settingsRepository.preferences.first().domesticWifiSsid) &&
+                                it.host.isNotBlank() &&
+                                it.deviceId != current.deviceId
+                        }
+                        _nearbyDevices.value = peers
+                        peers.forEach { peer ->
+                            mutex.withLock {
+                                try {
+                                    syncSession.synchronize(
+                                        peer.host,
+                                        peer.port,
+                                        current.householdId,
+                                        settingsRepository.getPairingCode(),
+                                    )
+                                    val peerId = peer.deviceId ?: peer.serviceName
+                                    authorizedDeviceDao.upsert(
+                                        authorizedDeviceDao.get(peerId)?.copy(
+                                            lastSeenAt = System.currentTimeMillis(),
+                                            displayName = peer.serviceName,
+                                        ) ?: AuthorizedDeviceEntity(peerId, current.householdId, peer.serviceName, System.currentTimeMillis())
+                                    )
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (_: Exception) {
+                                    // Discovery remains active when one peer is unavailable.
+                                }
                             }
                         }
                     }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    delay(RETRY_DELAY_MS)
                 }
+            }
         }
     }
 
@@ -216,7 +240,7 @@ class SyncCoordinator @Inject constructor(
     }
 
     suspend fun synchronizeAutomatically(): Boolean {
-        return runCatching {
+        return try {
             val current = deviceManager.ensureDevice()
             if (!wifiNetworkPolicy.isAllowed(settingsRepository.preferences.first().domesticWifiSsid)) return false
             val peer = withTimeout(DISCOVERY_TIMEOUT_MS) {
@@ -231,7 +255,11 @@ class SyncCoordinator @Inject constructor(
                 )
             }
             true
-        }.getOrDefault(false)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
     }
 
     companion object {

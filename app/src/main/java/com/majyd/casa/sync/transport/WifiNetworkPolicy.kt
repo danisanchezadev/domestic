@@ -17,8 +17,11 @@ class WifiNetworkPolicy @Inject constructor(
     private val wifiManager = context.getSystemService(WifiManager::class.java)
 
     fun isAllowed(configuredSsid: String): Boolean {
-        // Pairing is restricted to the active Wi-Fi transport; Android may hide the SSID.
-        return isConnectedToWifi()
+        if (!isConnectedToWifi()) return false
+        val expected = normalizeSsid(configuredSsid)
+        if (expected.isBlank()) return true
+        val actual = currentSsid()?.let(::normalizeSsid) ?: return false
+        return actual == expected
     }
 
     fun isConnectedToWifi(): Boolean {
@@ -36,5 +39,7 @@ class WifiNetworkPolicy @Inject constructor(
 
     companion object {
         private const val UNKNOWN_SSID = "<unknown ssid>"
+
+        internal fun normalizeSsid(value: String): String = value.trim().trim('"')
     }
 }

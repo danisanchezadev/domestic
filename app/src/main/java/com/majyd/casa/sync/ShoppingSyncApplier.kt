@@ -18,16 +18,16 @@ class ShoppingSyncApplier @Inject constructor(
     suspend fun apply(operation: SyncOperation): Boolean {
         // A previously recorded operation is already applied; acknowledge it to stop retries.
         if (operationRepository.get(operation.operationId) != null) return true
-        val accepted = database.withTransaction {
-            when (operation.entityType) {
+        return database.withTransaction {
+            val accepted = when (operation.entityType) {
                 "shopping_list" -> applyList(operation)
                 "shopping_product" -> applyProduct(operation)
                 "shopping_catalog" -> applyCatalog(operation)
                 else -> false
             }
+            if (accepted) operationRepository.record(operation.copy(applied = true))
+            accepted
         }
-        if (accepted) operationRepository.record(operation.copy(applied = true))
-        return accepted
     }
 
     private suspend fun applyList(operation: SyncOperation): Boolean {
@@ -35,8 +35,8 @@ class ShoppingSyncApplier @Inject constructor(
         if (payload.id != operation.entityId || payload.householdId != operation.householdId) return false
         val dao = database.shoppingListDao()
         val local = dao.getById(payload.id)
-        if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, "", payload.version, payload.updatedAt, operation.deviceId)) {
-            dao.upsert(ShoppingListEntity(payload.id, payload.name, payload.sortOrder, payload.deleted, payload.version, payload.createdAt, payload.updatedAt))
+        if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, payload.updatedByDevice.ifBlank { operation.deviceId })) {
+            dao.upsert(ShoppingListEntity(payload.id, payload.name, payload.sortOrder, payload.deleted, payload.version, payload.createdAt, payload.updatedAt, payload.updatedByDevice.ifBlank { operation.deviceId }))
         }
         return true
     }
@@ -47,8 +47,8 @@ class ShoppingSyncApplier @Inject constructor(
         val dao = database.shoppingProductDao()
         if (database.shoppingListDao().getById(payload.listId) == null) return false
         val local = dao.getById(payload.id)
-        if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, operation.deviceId)) {
-            dao.upsert(ShoppingProductEntity(payload.id, payload.listId, payload.name, payload.normalizedName, payload.categoryId, payload.quantity, payload.unit, payload.notes, payload.purchased, payload.purchasedAt, payload.createdAt, payload.updatedAt, payload.createdByDevice, operation.deviceId, payload.deleted, payload.version, payload.imageBase64 ?: local?.imageBase64))
+        if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, payload.updatedByDevice.ifBlank { operation.deviceId })) {
+            dao.upsert(ShoppingProductEntity(payload.id, payload.listId, payload.name, payload.normalizedName, payload.categoryId, payload.quantity, payload.unit, payload.notes, payload.purchased, payload.purchasedAt, payload.createdAt, payload.updatedAt, payload.createdByDevice, payload.updatedByDevice.ifBlank { operation.deviceId }, payload.deleted, payload.version, payload.imageBase64 ?: local?.imageBase64))
         }
         val catalogDao = database.shoppingCatalogDao()
         if (catalogDao.getByNameIncludingDeleted(payload.normalizedName) == null) {
@@ -65,6 +65,7 @@ class ShoppingSyncApplier @Inject constructor(
                     createdAt = payload.createdAt,
                     updatedAt = payload.updatedAt,
                     deleted = false,
+                    updatedByDevice = payload.updatedByDevice.ifBlank { operation.deviceId },
                 )
             )
         }
@@ -76,7 +77,7 @@ class ShoppingSyncApplier @Inject constructor(
         if (payload.id != operation.entityId || payload.householdId != operation.householdId) return false
         val dao = database.shoppingCatalogDao()
         val local = dao.getByNameIncludingDeleted(payload.normalizedName)
-        if (local == null || payload.updatedAt >= local.updatedAt) {
+        if (local == null || conflictResolver.incomingWins(local.updatedAt, local.updatedAt, local.updatedByDevice, payload.updatedAt, payload.updatedAt, payload.updatedByDevice.ifBlank { operation.deviceId })) {
             dao.upsert(
                 ShoppingCatalogEntity(
                     id = local?.id ?: payload.id,
@@ -90,6 +91,7 @@ class ShoppingSyncApplier @Inject constructor(
                     createdAt = payload.createdAt,
                     updatedAt = payload.updatedAt,
                     deleted = payload.deleted,
+                    updatedByDevice = payload.updatedByDevice.ifBlank { operation.deviceId },
                 )
             )
         }

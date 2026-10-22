@@ -23,8 +23,8 @@ class WeeklyMenuSyncApplier @Inject constructor(
             if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, operation.deviceId)) {
                 dao.upsert(WeeklyMenuItemEntity(payload.id, payload.householdId, payload.dayOfWeek, payload.mealSlot, payload.title, payload.normalizedTitle, payload.notes, payload.deleted, payload.createdAt, payload.updatedAt, payload.version, payload.updatedByDevice))
             }
+            operationRepository.record(operation.copy(applied = true))
         }
-        operationRepository.record(operation.copy(applied = true))
         return true
     }
 }

@@ -36,8 +36,8 @@ class TaskSyncApplier @Inject constructor(
                 database.taskDao().clearPersonAssignments(payload.id)
                 database.taskDao().clearGroupAssignments(payload.id)
                 database.taskDao().permanentlyDelete(payload.id)
+                operationRepository.record(operation.copy(applied = true))
             }
-            operationRepository.record(operation.copy(applied = true))
             notificationScheduler.cancel(payload.id)
             return true
         }
@@ -49,7 +49,8 @@ class TaskSyncApplier @Inject constructor(
         val applied = database.withTransaction {
             val dao = database.taskDao()
             val local = dao.getById(payload.id)
-            if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDeviceId.orEmpty(), payload.version, payload.updatedAt, operation.deviceId)) {
+            val shouldApply = local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDeviceId.orEmpty(), payload.version, payload.updatedAt, operation.deviceId)
+            if (shouldApply) {
                 dao.upsert(
                     TaskEntity(
                     id = payload.id,
@@ -78,10 +79,10 @@ class TaskSyncApplier @Inject constructor(
                 dao.clearGroupAssignments(payload.id)
                 normalizedAssignment.personIds.forEach { dao.upsertPersonAssignment(TaskPersonAssignmentEntity(payload.id, it, payload.updatedAt)) }
                 normalizedAssignment.groupId?.let { dao.upsertGroupAssignment(TaskGroupAssignmentEntity(payload.id, it, payload.updatedAt)) }
-                true
-            } else false
+            }
+            operationRepository.record(operation.copy(applied = true))
+            shouldApply
         }
-        operationRepository.record(operation.copy(applied = true))
         if (applied) {
             val task = payload.toModel(normalizedAssignment)
             val household = householdRepository.observeState().first()

@@ -12,5 +12,6 @@ data class ShoppingListEntity(
     val version: Long,
     val createdAt: Long,
     val updatedAt: Long,
+    val updatedByDevice: String = "",
 )
 

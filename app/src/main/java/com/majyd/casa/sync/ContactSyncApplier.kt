@@ -37,8 +37,8 @@ class ContactSyncApplier @Inject constructor(
                     )
                 )
             }
+            operationRepository.record(operation.copy(applied = true))
         }
-        operationRepository.record(operation.copy(applied = true))
         return true
     }
 }

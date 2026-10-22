@@ -57,8 +57,8 @@ class HouseholdSyncApplier @Inject constructor(
         if (payload.id != operation.entityId || payload.householdId != operation.householdId) return false
         val dao = database.householdDao()
         val local = dao.getPerson(payload.id)
-        if (local == null || resolver.incomingWins(local.version, local.updatedAt, "", payload.version, payload.updatedAt, operation.deviceId)) {
-            dao.upsertPerson(PersonEntity(payload.id, payload.householdId, payload.name, com.majyd.casa.util.Normalizer.normalizeText(payload.name), payload.deleted, payload.createdAt, payload.updatedAt, payload.version))
+        if (local == null || resolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, payload.updatedByDevice.ifBlank { operation.deviceId })) {
+            dao.upsertPerson(PersonEntity(payload.id, payload.householdId, payload.name, com.majyd.casa.util.Normalizer.normalizeText(payload.name), payload.deleted, payload.createdAt, payload.updatedAt, payload.version, payload.updatedByDevice.ifBlank { operation.deviceId }))
         }
         return true
     }
@@ -68,8 +68,8 @@ class HouseholdSyncApplier @Inject constructor(
         if (payload.id != operation.entityId || payload.householdId != operation.householdId) return false
         val dao = database.householdDao()
         val local = dao.getGroup(payload.id)
-        if (local == null || resolver.incomingWins(local.version, local.updatedAt, "", payload.version, payload.updatedAt, operation.deviceId)) {
-            dao.upsertGroup(HouseholdGroupEntity(payload.id, payload.householdId, payload.name, com.majyd.casa.util.Normalizer.normalizeText(payload.name), payload.deleted, payload.createdAt, payload.updatedAt, payload.version))
+        if (local == null || resolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, payload.updatedByDevice.ifBlank { operation.deviceId })) {
+            dao.upsertGroup(HouseholdGroupEntity(payload.id, payload.householdId, payload.name, com.majyd.casa.util.Normalizer.normalizeText(payload.name), payload.deleted, payload.createdAt, payload.updatedAt, payload.version, payload.updatedByDevice.ifBlank { operation.deviceId }))
             dao.clearMembers(payload.id)
             payload.memberIds.forEach { dao.upsertMember(GroupMemberEntity(payload.id, it, payload.updatedAt)) }
         }

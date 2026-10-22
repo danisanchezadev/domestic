@@ -93,6 +93,23 @@ class SyncModelsTest {
     }
 
     @Test
+    fun conflictResolver_rejectsOlderClockAndConvergesOnTie() {
+        val resolver = DeterministicConflictResolver()
+
+        assertFalse(resolver.incomingWins(3, 200, "device-b", 3, 100, "device-a"))
+        assertTrue(resolver.incomingWins(3, 100, "device-a", 3, 100, "device-b"))
+        assertFalse(resolver.incomingWins(3, 100, "device-b", 3, 100, "device-a"))
+    }
+
+    @Test
+    fun conflictResolver_neverLetsAnOlderVersionReplaceADeletion() {
+        val resolver = DeterministicConflictResolver()
+
+        assertFalse(resolver.incomingWins(5, 500, "device-a", 4, 900, "device-b"))
+        assertTrue(resolver.incomingWins(5, 500, "device-a", 6, 1, "device-b"))
+    }
+
+    @Test
     fun notificationPolicy_includesGroupMemberAndExcludesUnassigned() {
         val person = Person("person-1", "home-1", "Daniel", 1L)
         val group = HouseholdGroup("group-1", "home-1", "Adultos", setOf(person.id), 1L)
@@ -165,5 +182,11 @@ class SyncModelsTest {
         assertFalse(AuthorizedDevicePolicy.canAccept(revoked, "home-1", activeDeviceCount = 1))
         assertTrue(AuthorizedDevicePolicy.canAccept(null, "home-1", activeDeviceCount = 1))
         assertFalse(AuthorizedDevicePolicy.canAccept(null, "home-1", activeDeviceCount = 2))
+    }
+
+    @Test
+    fun wifiSsidNormalizationRemovesAndroidQuotes() {
+        assertEquals("CasaWifi", com.majyd.casa.sync.transport.WifiNetworkPolicy.normalizeSsid("  \"CasaWifi\"  "))
+        assertEquals("<unknown ssid>", com.majyd.casa.sync.transport.WifiNetworkPolicy.normalizeSsid("<unknown ssid>"))
     }
 }

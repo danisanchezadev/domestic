@@ -11,6 +11,9 @@ interface TaskHistoryDao {
     @Query("SELECT * FROM task_history ORDER BY usageCount DESC, lastUsedAt DESC")
     fun observeAll(): Flow<List<TaskHistoryEntity>>
 
+    @Query("SELECT * FROM task_history WHERE normalizedTitle = :normalizedTitle LIMIT 1")
+    suspend fun getByNormalizedTitle(normalizedTitle: String): TaskHistoryEntity?
+
     @Upsert
     suspend fun upsert(history: TaskHistoryEntity)
 }

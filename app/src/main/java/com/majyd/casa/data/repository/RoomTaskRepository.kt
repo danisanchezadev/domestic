@@ -128,7 +128,7 @@ class RoomTaskRepository @Inject constructor(
     }
 
     private suspend fun rememberTask(entity: TaskEntity, personIds: Set<String>, groupId: String?) {
-        val existing = taskHistoryDao.observeAll().first().firstOrNull { it.normalizedTitle == entity.normalizedTitle }
+        val existing = taskHistoryDao.getByNormalizedTitle(entity.normalizedTitle)
         taskHistoryDao.upsert(
             TaskHistoryEntity(
                 normalizedTitle = entity.normalizedTitle,

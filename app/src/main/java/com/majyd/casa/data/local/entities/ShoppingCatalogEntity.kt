@@ -20,5 +20,6 @@ data class ShoppingCatalogEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val deleted: Boolean,
+    val updatedByDevice: String = "",
 )
 

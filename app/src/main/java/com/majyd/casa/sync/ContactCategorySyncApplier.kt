@@ -23,8 +23,8 @@ class ContactCategorySyncApplier @Inject constructor(
             if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, operation.deviceId)) {
                 dao.upsert(ContactCategoryEntity(payload.id, payload.householdId, payload.name, payload.normalizedName, payload.deleted, payload.createdAt, payload.updatedAt, payload.version, operation.deviceId))
             }
+            operationRepository.record(operation.copy(applied = true))
         }
-        operationRepository.record(operation.copy(applied = true))
         return true
     }
 }
