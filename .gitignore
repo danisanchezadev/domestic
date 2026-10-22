@@ -1,0 +1,28 @@
+# Android Studio and IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Local machine configuration
+local.properties
+
+# Gradle and Kotlin caches
+.gradle/
+.kotlin/
+
+# Build outputs
+build/
+**/build/
+
+# Native crash and replay logs
+hs_err_pid*.log
+replay_pid*.log
+
+# Generated APK artifacts
+*.apk
+*.aab
+
+# OS files
+.DS_Store
+Thumbs.db
