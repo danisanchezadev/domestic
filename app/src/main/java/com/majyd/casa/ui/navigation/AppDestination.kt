@@ -28,6 +28,7 @@ sealed class AppDestination(
     data object Shopping : AppDestination("shopping", "Compra", Icons.Filled.ShoppingCart, "Listas y productos")
     data object Tasks : AppDestination("tasks", "Tareas", Icons.Filled.TaskAlt, "Tareas domésticas")
     data object Calendar : AppDestination("calendar", "Agenda", Icons.Filled.CalendarMonth, "Citas y eventos")
+    data object Dishes : AppDestination("dishes", "Mis platos", Icons.Filled.Dining, "Catalogo de platos")
     data object WeeklyMenu : AppDestination("menu", "Menú", Icons.Filled.RestaurantMenu, "Plan semanal")
     data object Plans : AppDestination("plans", "Planes", Icons.Filled.Dining, "Películas y experiencias")
     data object Trips : AppDestination("trips", "Viajes", Icons.Filled.Cabin, "Preparación de viajes")

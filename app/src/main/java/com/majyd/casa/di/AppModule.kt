@@ -15,9 +15,13 @@ import com.majyd.casa.data.repository.RoomHomeProfileRepository
 import com.majyd.casa.data.repository.RoomShoppingRepository
 import com.majyd.casa.data.repository.RoomTaskRepository
 import com.majyd.casa.data.repository.RoomWeeklyMenuRepository
+import com.majyd.casa.data.repository.RoomDishRepository
 import com.majyd.casa.data.repository.ShoppingRepository
 import com.majyd.casa.data.repository.TaskRepository
 import com.majyd.casa.data.repository.WeeklyMenuRepository
+import com.majyd.casa.data.repository.RoomMenuTemplateRepository
+import com.majyd.casa.data.repository.MenuTemplateRepository
+import com.majyd.casa.data.repository.DishRepository
 import com.majyd.casa.data.repository.HouseholdRepository
 import com.majyd.casa.data.repository.RoomHouseholdRepository
 import com.majyd.casa.data.repository.SettingsRepository
@@ -118,6 +122,17 @@ object AppProvidesModule {
 
     @Provides
     @Singleton
+    fun provideDishDao(database: CasaDatabase) = database.dishDao()
+
+    @Provides
+    fun provideMenuTemplateDao(database: CasaDatabase) = database.menuTemplateDao()
+
+    @Provides
+    @Singleton
+    fun provideMenuHistoryDao(database: CasaDatabase) = database.menuHistoryDao()
+
+    @Provides
+    @Singleton
     fun provideHouseholdDao(database: CasaDatabase) = database.householdDao()
 
     @Provides
@@ -206,6 +221,17 @@ abstract class AppBindModule {
     abstract fun bindWeeklyMenuRepository(
         impl: RoomWeeklyMenuRepository,
     ): WeeklyMenuRepository
+
+    @Binds
+    abstract fun bindMenuTemplateRepository(
+        impl: RoomMenuTemplateRepository,
+    ): MenuTemplateRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDishRepository(
+        impl: RoomDishRepository,
+    ): DishRepository
 
     @Binds
     @Singleton

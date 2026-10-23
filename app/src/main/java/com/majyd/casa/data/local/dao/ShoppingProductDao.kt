@@ -8,14 +8,17 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ShoppingProductDao {
-    @Query("SELECT * FROM shopping_products WHERE listId = :listId AND deleted = 0 ORDER BY purchased ASC, updatedAt DESC")
+    @Query("SELECT * FROM shopping_products WHERE listId = :listId AND deleted = 0 ORDER BY name COLLATE NOCASE ASC")
     fun observeProducts(listId: String): Flow<List<ShoppingProductEntity>>
 
-    @Query("SELECT * FROM shopping_products WHERE listId = :listId AND deleted = 0 ORDER BY purchased ASC, updatedAt DESC")
+    @Query("SELECT * FROM shopping_products WHERE listId = :listId AND deleted = 0 ORDER BY name COLLATE NOCASE ASC")
     suspend fun getProducts(listId: String): List<ShoppingProductEntity>
 
     @Query("SELECT * FROM shopping_products WHERE id = :productId LIMIT 1")
     suspend fun getById(productId: String): ShoppingProductEntity?
+
+    @Query("SELECT * FROM shopping_products WHERE listId = :listId AND normalizedName = :normalizedName AND deleted = 0 LIMIT 1")
+    suspend fun getActiveByName(listId: String, normalizedName: String): ShoppingProductEntity?
 
     @Query("SELECT * FROM shopping_products WHERE listId = :listId AND deleted = 1 ORDER BY updatedAt DESC")
     fun observeDeletedProducts(listId: String): Flow<List<ShoppingProductEntity>>

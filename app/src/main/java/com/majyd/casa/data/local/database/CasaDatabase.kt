@@ -31,6 +31,12 @@ import com.majyd.casa.data.local.entities.TaskHistoryEntity
 import com.majyd.casa.data.local.entities.ContactEntity
 import com.majyd.casa.data.local.entities.ContactCategoryEntity
 import com.majyd.casa.data.local.entities.CalendarPlaceEntity
+import com.majyd.casa.data.local.entities.DishEntity
+import com.majyd.casa.data.local.entities.DishIngredientEntity
+import com.majyd.casa.data.local.entities.DishVariantEntity
+import com.majyd.casa.data.local.entities.MenuTemplateEntity
+import com.majyd.casa.data.local.entities.MenuTemplateItemEntity
+import com.majyd.casa.data.local.entities.MenuHistoryItemEntity
 
 @Database(
     entities = [
@@ -54,8 +60,14 @@ import com.majyd.casa.data.local.entities.CalendarPlaceEntity
         ContactEntity::class,
         ContactCategoryEntity::class,
         CalendarPlaceEntity::class,
+        DishEntity::class,
+        DishIngredientEntity::class,
+        DishVariantEntity::class,
+        MenuTemplateEntity::class,
+        MenuTemplateItemEntity::class,
+        MenuHistoryItemEntity::class,
     ],
-    version = 24,
+    version = 30,
     exportSchema = true,
 )
 abstract class CasaDatabase : RoomDatabase() {
@@ -75,4 +87,7 @@ abstract class CasaDatabase : RoomDatabase() {
     abstract fun contactDao(): com.majyd.casa.data.local.dao.ContactDao
     abstract fun contactCategoryDao(): com.majyd.casa.data.local.dao.ContactCategoryDao
     abstract fun calendarPlaceDao(): com.majyd.casa.data.local.dao.CalendarPlaceDao
+    abstract fun dishDao(): com.majyd.casa.data.local.dao.DishDao
+    abstract fun menuTemplateDao(): com.majyd.casa.data.local.dao.MenuTemplateDao
+    abstract fun menuHistoryDao(): com.majyd.casa.data.local.dao.MenuHistoryDao
 }

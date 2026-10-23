@@ -18,7 +18,7 @@ pruebas automaticas y validacion manual.
 | Productos habituales | Si | Si | Parcial |
 | Agenda y lugares | Si | Si | Pendiente de repetir |
 | Contactos y categorias | Si | Si | Pendiente de repetir |
-| Menu semanal | Si | Si | Pendiente |
+| Menu semanal | Si | Si | Pendiente de prueba en dos dispositivos |
 | Ajustes y credenciales | Si | No, son locales | Parcial |
 | Busqueda global | No, placeholder | No | No aplica |
 | Economia | Tarjeta placeholder | No | No aplica |
@@ -28,6 +28,47 @@ telefonos las pruebas de agenda, contactos y menu semanal despues de las
 ultimas correcciones.
 
 ## Funcionalidades
+
+### Menu, platos y compra
+
+- Catalogo de platos en Room, ordenado alfabeticamente.
+- Busqueda por nombre y filtro por comida, cena o ambas.
+- Fotografias desde galeria o camara, con correccion EXIF, redimensionado y
+  almacenamiento Base64 para que no dependan de una URI local.
+- Receta, tiempo, raciones, notas e ingredientes estructurados con cantidad y
+  unidad.
+- Variantes de receta con nombre, receta y notas propias. Las variantes se
+  sincronizan como entidades independientes y disponen de migracion Room
+  26->27; los ingredientes admiten tambien `variantId`.
+- El planificador permite elegir una variante para cada asignacion y usa sus
+  ingredientes al preparar la compra. La referencia de variante se conserva
+  y sincroniza mediante la migracion 27->28.
+- Cada plato muestra el numero de asignaciones activas y la ultima actualizacion
+  conocida. Son estadisticas de planificacion, no confirmacion de consumo.
+- Asignacion de un plato a un hueco estable de dia y comida/cena. Guardar de
+  nuevo el mismo hueco sustituye la asignacion en lugar de crear duplicados.
+- Al asignar un plato, sus ingredientes activos se incorporan a la lista de la
+  compra por nombre normalizado; si ya estan activos no se duplican.
+- Las asignaciones recibidas por sincronizacion aplican la misma incorporacion
+  de ingredientes en el dispositivo receptor.
+- La base de datos esta en Room 30, con migraciones no destructivas 25->26,
+  26->27, 27->28, 28->29 y 29->30. Las dos ultimas crean las tablas de
+  plantillas y del historial semanal.
+- Las plantillas permiten guardar el menu activo, cargarlo sin volver a
+  incorporar ingredientes a la compra y eliminarlas. Tambien se sincronizan
+  como `menu_template` y `menu_template_item`.
+- La seleccion individual de ingredientes antes de incorporarlos, los
+  ingredientes propios de cada variante y las estadisticas de planificacion
+  estan implementados.
+- El historial conserva cuatro semanas, permite marcar cada plato como
+  realizado y sincroniza ese estado entre dispositivos. El historial se crea
+  como snapshot del menu activo y se limpia automaticamente cuando queda fuera
+  de la ventana de cuatro semanas.
+- El comportamiento acordado de esta version es recurrente: si no se cambia
+  una asignacion, permanece para la siguiente semana; no existe un reinicio
+  automatico fijo los sabados. La modificacion del menu puede hacerse en
+  cualquier momento y los ingredientes seleccionados se incorporan entonces a
+  la lista de la compra.
 
 ### Inicio y ajustes
 

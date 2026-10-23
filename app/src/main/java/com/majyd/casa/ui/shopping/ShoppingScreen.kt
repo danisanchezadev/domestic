@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -53,6 +54,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.exifinterface.media.ExifInterface
@@ -87,7 +89,7 @@ fun ShoppingScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val productName = state.draft.name
     val imageBase64 = state.draft.imageBase64
-    val products = state.pending + state.purchased
+    val products = (state.pending + state.purchased).sortedBy { it.name.lowercase() }
     val context = LocalContext.current
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
@@ -223,14 +225,10 @@ fun ShoppingScreen(
                                         ) {
                                             Icon(Icons.Filled.Edit, contentDescription = "Editar habitual")
                                         }
-                                        IconButton(
+                                        CompactDeleteButton(
+                                            contentDescription = "Eliminar habitual",
                                             onClick = { viewModel.deleteCatalogItem(suggestion.displayName) },
-                                            colors = IconButtonDefaults.iconButtonColors(
-                                                contentColor = Color(0xFFD32F2F),
-                                            ),
-                                        ) {
-                                            Icon(Icons.Filled.Delete, contentDescription = "Eliminar habitual")
-                                        }
+                                        )
                                     }
                                 }
                             }
@@ -323,7 +321,7 @@ private fun ActionButton(
 @Composable
 private fun ShoppingItem(product: ShoppingProduct, onDelete: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onDelete),
+        modifier = Modifier.fillMaxWidth(),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primary,
         ),
@@ -337,14 +335,7 @@ private fun ShoppingItem(product: ShoppingProduct, onDelete: () -> Unit) {
                 Text(product.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimary)
                 if (product.purchased) Text("Comprado", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimary)
             }
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(46.dp),
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color.Transparent,
-                    contentColor = Color(0xFFD32F2F),
-                ),
-            ) { Icon(Icons.Filled.Delete, contentDescription = "Eliminar") }
+            CompactDeleteButton(onClick = onDelete)
         }
         product.imageBase64?.let { encoded ->
             decodeBase64Image(encoded)?.let { bitmap ->
@@ -359,6 +350,26 @@ private fun ShoppingItem(product: ShoppingProduct, onDelete: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CompactDeleteButton(
+    contentDescription: String = "Eliminar",
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Filled.Delete,
+            contentDescription = contentDescription,
+            tint = Color(0xFFD32F2F),
+            modifier = Modifier.size(24.dp),
+        )
     }
 }
 

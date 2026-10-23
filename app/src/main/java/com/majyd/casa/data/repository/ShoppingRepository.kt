@@ -18,6 +18,7 @@ interface ShoppingRepository {
     suspend fun ensureCatalogSyncOperations()
     suspend fun ensureDefaults()
     suspend fun createList(name: String): ShoppingList
+    suspend fun addIngredientToDefaultList(name: String, quantity: Double, unit: String): ShoppingProduct
     suspend fun upsertProduct(
         listId: String,
         productId: String?,

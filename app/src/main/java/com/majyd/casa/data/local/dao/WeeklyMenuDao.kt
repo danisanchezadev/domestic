@@ -14,6 +14,15 @@ interface WeeklyMenuDao {
     @Query("SELECT * FROM weekly_menu_items WHERE id = :itemId LIMIT 1")
     suspend fun getById(itemId: String): WeeklyMenuItemEntity?
 
+    @Query("SELECT * FROM weekly_menu_items WHERE dayOfWeek = :dayOfWeek AND mealSlot = :mealSlot AND deleted = 0 LIMIT 1")
+    suspend fun getActiveBySlot(dayOfWeek: Int, mealSlot: String): WeeklyMenuItemEntity?
+
+    @Query("SELECT COUNT(*) FROM weekly_menu_items WHERE dishId = :dishId AND deleted = 0")
+    suspend fun countActiveAssignments(dishId: String): Int
+
+    @Query("SELECT MAX(updatedAt) FROM weekly_menu_items WHERE dishId = :dishId AND deleted = 0")
+    suspend fun lastAssignmentUpdate(dishId: String): Long?
+
     @Query("SELECT * FROM weekly_menu_items WHERE deleted = 0")
     suspend fun getActive(): List<WeeklyMenuItemEntity>
 

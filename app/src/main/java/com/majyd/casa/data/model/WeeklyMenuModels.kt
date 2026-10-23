@@ -14,6 +14,8 @@ data class WeeklyMenuItem(
     val id: String,
     val dayOfWeek: Int,
     val mealSlot: MealSlot,
+    val dishId: String?,
+    val variantId: String?,
     val title: String,
     val normalizedTitle: String,
     val notes: String,

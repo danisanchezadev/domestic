@@ -381,4 +381,60 @@ val MIGRATION_23_24 = object : Migration(23, 24) {
     }
 }
 
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+val MIGRATION_24_25 = object : Migration(24, 25) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS dishes (id TEXT NOT NULL, householdId TEXT NOT NULL, name TEXT NOT NULL, normalizedName TEXT NOT NULL, mealType TEXT NOT NULL, imageBase64 TEXT, recipe TEXT NOT NULL, preparationMinutes INTEGER, servings INTEGER, notes TEXT NOT NULL, deleted INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(id))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_dishes_householdId ON dishes (householdId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_dishes_normalizedName ON dishes (normalizedName)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS dish_ingredients (id TEXT NOT NULL, dishId TEXT NOT NULL, name TEXT NOT NULL, normalizedName TEXT NOT NULL, quantity REAL, unit TEXT NOT NULL, sortOrder INTEGER NOT NULL, deleted INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(id))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_dish_ingredients_dishId ON dish_ingredients (dishId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_dish_ingredients_normalizedName ON dish_ingredients (normalizedName)")
+    }
+}
+
+val MIGRATION_25_26 = object : Migration(25, 26) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE weekly_menu_items ADD COLUMN dishId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weekly_menu_items_dishId ON weekly_menu_items (dishId)")
+    }
+}
+
+val MIGRATION_26_27 = object : Migration(26, 27) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE dish_ingredients ADD COLUMN variantId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_dish_ingredients_variantId ON dish_ingredients (variantId)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS dish_variants (id TEXT NOT NULL, dishId TEXT NOT NULL, name TEXT NOT NULL, normalizedName TEXT NOT NULL, recipe TEXT NOT NULL, notes TEXT NOT NULL, deleted INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(id))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_dish_variants_dishId ON dish_variants (dishId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_dish_variants_normalizedName ON dish_variants (normalizedName)")
+    }
+}
+
+val MIGRATION_27_28 = object : Migration(27, 28) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE weekly_menu_items ADD COLUMN variantId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weekly_menu_items_variantId ON weekly_menu_items (variantId)")
+    }
+}
+
+val MIGRATION_28_29 = object : Migration(28, 29) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS menu_templates (id TEXT NOT NULL, householdId TEXT NOT NULL, name TEXT NOT NULL, normalizedName TEXT NOT NULL, deleted INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(id))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_menu_templates_householdId ON menu_templates (householdId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_menu_templates_normalizedName ON menu_templates (normalizedName)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS menu_template_items (templateId TEXT NOT NULL, dayOfWeek INTEGER NOT NULL, mealSlot TEXT NOT NULL, dishId TEXT, variantId TEXT, title TEXT NOT NULL, notes TEXT NOT NULL, deleted INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(templateId, dayOfWeek, mealSlot))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_menu_template_items_templateId ON menu_template_items (templateId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_menu_template_items_dishId ON menu_template_items (dishId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_menu_template_items_variantId ON menu_template_items (variantId)")
+    }
+}
+
+val MIGRATION_29_30 = object : Migration(29, 30) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS menu_history_items (id TEXT NOT NULL, householdId TEXT NOT NULL, weekStartEpochDay INTEGER NOT NULL, dayOfWeek INTEGER NOT NULL, mealSlot TEXT NOT NULL, dishId TEXT, variantId TEXT, title TEXT NOT NULL, notes TEXT NOT NULL, completed INTEGER NOT NULL, completedAt INTEGER, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(id))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_menu_history_items_householdId ON menu_history_items (householdId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_menu_history_items_weekStartEpochDay ON menu_history_items (weekStartEpochDay)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_menu_history_items_dishId ON menu_history_items (dishId)")
+    }
+}
+
+val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
