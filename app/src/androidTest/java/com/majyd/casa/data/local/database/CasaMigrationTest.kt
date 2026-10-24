@@ -1,7 +1,6 @@
 package com.majyd.casa.data.local.database
 
 import androidx.room.testing.MigrationTestHelper
-import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -14,8 +13,7 @@ class CasaMigrationTest {
     @get:Rule
     val helper = MigrationTestHelper(
         InstrumentationRegistry.getInstrumentation(),
-        CasaDatabase::class.java.name,
-        FrameworkSQLiteOpenHelperFactory(),
+        CasaDatabase::class.java,
     )
 
     @Test
@@ -27,7 +25,7 @@ class CasaMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_NAME, 30, true, *ALL_MIGRATIONS).use { database ->
+        helper.runMigrationsAndValidate(DB_NAME, 31, true, *ALL_MIGRATIONS).use { database ->
             database.query("SELECT COUNT(*) FROM tasks WHERE id = 'task-old'").use { cursor ->
                 cursor.moveToFirst()
                 assertEquals(1, cursor.getInt(0))
@@ -47,7 +45,7 @@ class CasaMigrationTest {
     fun migrateFromRoom2_emptyDatabase_reachesCurrentSchema() {
         helper.createDatabase(ROOM2_DB_NAME, 2).close()
 
-        helper.runMigrationsAndValidate(ROOM2_DB_NAME, 30, true, *ALL_MIGRATIONS).use {
+        helper.runMigrationsAndValidate(ROOM2_DB_NAME, 31, true, *ALL_MIGRATIONS).use {
             // Schema validation is the assertion for the complete migration chain.
         }
     }
@@ -63,7 +61,7 @@ class CasaMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(ROOM23_DB_NAME, 30, true, *ALL_MIGRATIONS).use { database ->
+        helper.runMigrationsAndValidate(ROOM23_DB_NAME, 31, true, *ALL_MIGRATIONS).use { database ->
             database.query("SELECT updatedByDevice FROM shopping_lists WHERE id = 'list-23'").use { cursor ->
                 cursor.moveToFirst()
                 assertEquals("", cursor.getString(0))

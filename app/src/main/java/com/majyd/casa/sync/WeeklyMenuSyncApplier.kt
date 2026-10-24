@@ -19,15 +19,16 @@ class WeeklyMenuSyncApplier @Inject constructor(
         if (operationRepository.get(operation.operationId) != null) return true
         val payload = WeeklyMenuSyncPayloadCodec.decode(operation.payload) ?: return false
         if (operation.entityType != "weekly_menu_item" || payload.id != operation.entityId || payload.householdId != operation.householdId) return false
-        database.withTransaction {
+        val appliedToLocal = database.withTransaction {
             val dao = database.weeklyMenuDao()
             val local = dao.getById(payload.id)
-            if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, operation.deviceId)) {
+            val incomingWins = local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, operation.deviceId)
+            if (incomingWins) {
                 dao.upsert(WeeklyMenuItemEntity(payload.id, payload.householdId, payload.dayOfWeek, payload.mealSlot, payload.dishId, payload.variantId, payload.title, payload.normalizedTitle, payload.notes, payload.deleted, payload.createdAt, payload.updatedAt, payload.version, payload.updatedByDevice))
             }
-            operationRepository.record(operation.copy(applied = true))
+            incomingWins
         }
-        if (!payload.deleted && payload.dishId != null) {
+        if (appliedToLocal && !payload.deleted && payload.dishId != null) {
             // The menu assignment is also the trigger for the shopping ingredients on the peer device.
             val dish = database.dishDao().getById(payload.dishId)
             dish?.let {
@@ -40,6 +41,9 @@ class WeeklyMenuSyncApplier @Inject constructor(
                     }
             }
         }
+        // Record only after the menu and its shopping side effects have succeeded so a failed
+        // ingredient import remains retryable.
+        operationRepository.record(operation.copy(applied = true))
         return true
     }
 }
