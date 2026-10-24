@@ -26,13 +26,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest
+        run: bash ./gradlew testDebugUnitTest
 
       - name: Compile instrumentation tests
-        run: ./gradlew compileDebugAndroidTestKotlin
+        run: bash ./gradlew compileDebugAndroidTestKotlin
 
       - name: Verify source encoding and resources
-        run: ./gradlew verifyStringEncoding
+        run: bash ./gradlew verifyStringEncoding
 
       - name: Assemble debug APK
-        run: ./gradlew assembleDebug
+        run: bash ./gradlew assembleDebug

@@ -20,7 +20,14 @@ private data class Palette(
 )
 
 private fun palette(theme: ColorTheme): Palette = when (theme) {
-    ColorTheme.GREEN -> Palette(SageGreen, SageGreenDark, Clay, ClayDark, Butter, ButterDark)
+    ColorTheme.GREEN -> Palette(
+        primary = SageGreen,
+        primaryDark = SageGreenDark,
+        secondary = androidx.compose.ui.graphics.Color(0xFF76558F),
+        secondaryDark = androidx.compose.ui.graphics.Color(0xFFD5B9EC),
+        tertiary = Butter,
+        tertiaryDark = ButterDark,
+    )
     ColorTheme.PURPLE -> Palette(
         primary = androidx.compose.ui.graphics.Color(0xFF76558F),
         primaryDark = androidx.compose.ui.graphics.Color(0xFFD5B9EC),

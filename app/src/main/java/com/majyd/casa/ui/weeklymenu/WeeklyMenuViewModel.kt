@@ -35,18 +35,22 @@ data class WeeklyMenuDraft(
 
 data class WeeklyMenuUiState(
     val activeItems: List<WeeklyMenuItem> = emptyList(),
-    val deletedItems: List<WeeklyMenuItem> = emptyList(),
     val draft: WeeklyMenuDraft = WeeklyMenuDraft(),
     val dishes: List<Dish> = emptyList(),
     val variants: List<DishVariant> = emptyList(),
     val ingredientPicker: IngredientPickerState? = null,
-    val templates: List<MenuTemplate> = emptyList(),
-    val history: List<MenuHistoryItem> = emptyList(),
+    val recipeDetail: RecipeDetailState? = null,
 )
 
 data class IngredientPickerState(
     val ingredients: List<DishIngredient>,
     val selectedIds: Set<String>,
+)
+
+data class RecipeDetailState(
+    val item: WeeklyMenuItem,
+    val dish: Dish,
+    val ingredients: List<DishIngredient>,
 )
 
 @HiltViewModel
@@ -64,14 +68,12 @@ class WeeklyMenuViewModel @Inject constructor(
     )
     private val dishes = dishRepository.observeDishes().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val ingredientPicker = MutableStateFlow<IngredientPickerState?>(null)
+    private val recipeDetail = MutableStateFlow<RecipeDetailState?>(null)
     private val availableVariants = MutableStateFlow<List<DishVariant>>(emptyList())
-    private val templates = menuTemplateRepository.observeTemplates().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    private val history = weeklyMenuRepository.observeHistory().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val baseUiState = combine(items, draft, dishes, availableVariants, ingredientPicker) { list, draftValue, dishList, variantList, picker ->
         WeeklyMenuUiState(
             activeItems = list.filterNot { it.deleted },
-            deletedItems = list.filter { it.deleted },
             draft = draftValue,
             dishes = dishList,
             variants = variantList,
@@ -79,8 +81,8 @@ class WeeklyMenuViewModel @Inject constructor(
         )
     }
 
-    val uiState: StateFlow<WeeklyMenuUiState> = combine(baseUiState, templates, history) { state, templateList, historyList ->
-        state.copy(templates = templateList, history = historyList)
+    val uiState: StateFlow<WeeklyMenuUiState> = combine(baseUiState, recipeDetail) { state, recipe ->
+        state.copy(recipeDetail = recipe)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -106,8 +108,28 @@ class WeeklyMenuViewModel @Inject constructor(
         viewModelScope.launch { availableVariants.value = item.dishId?.let { dishRepository.getVariants(it) }.orEmpty() }
     }
 
+    fun openRecipe(item: WeeklyMenuItem) = viewModelScope.launch {
+        val dish = dishes.value.firstOrNull { it.id == item.dishId } ?: return@launch
+        val ingredients = dishRepository.getIngredients(dish.id, item.variantId).filterNot { it.deleted }
+        recipeDetail.value = RecipeDetailState(item, dish, ingredients)
+    }
+
+    fun closeRecipe() {
+        recipeDetail.value = null
+    }
+
+    fun deleteRecipeAssignment() = viewModelScope.launch {
+        recipeDetail.value?.item?.let { weeklyMenuRepository.deleteItem(it.id) }
+        recipeDetail.value = null
+    }
+
     fun clearDraft() {
         draft.value = WeeklyMenuDraft()
+    }
+
+    fun startNewForSlot(dayOfWeek: Int, mealSlot: MealSlot) {
+        draft.value = WeeklyMenuDraft(dayOfWeek = dayOfWeek, mealSlot = mealSlot)
+        availableVariants.value = emptyList()
     }
 
     fun updateDayOfWeek(value: Int) = draft.update { it.copy(dayOfWeek = value.coerceIn(1, 7)) }
@@ -128,7 +150,7 @@ class WeeklyMenuViewModel @Inject constructor(
         }
         val ingredients = dishRepository.getIngredients(dishId, draft.value.variantId).filterNot { it.deleted }
         if (ingredients.isEmpty()) saveItem(emptySet())
-        else ingredientPicker.value = IngredientPickerState(ingredients, ingredients.map { it.id }.toSet())
+        else ingredientPicker.value = IngredientPickerState(ingredients, emptySet())
     }
 
     fun toggleIngredient(id: String) = ingredientPicker.update { state ->
@@ -170,6 +192,10 @@ class WeeklyMenuViewModel @Inject constructor(
 
     fun archiveAll() = viewModelScope.launch {
         weeklyMenuRepository.archiveAll()
+    }
+
+    fun copyActiveMenu() = viewModelScope.launch {
+        weeklyMenuRepository.copyActiveMenu()
     }
 
     fun saveTemplate(name: String) = viewModelScope.launch {

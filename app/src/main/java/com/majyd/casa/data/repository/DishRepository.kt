@@ -16,9 +16,11 @@ interface DishRepository {
     suspend fun saveDish(
         dishId: String?,
         name: String,
+        category: String,
         mealType: DishMealType,
         imageBase64: String?,
         recipe: String,
+        recipeSteps: String,
         preparationMinutes: Int?,
         servings: Int?,
         notes: String,

@@ -70,9 +70,11 @@ class RoomDishRepository @Inject constructor(
     override suspend fun saveDish(
         dishId: String?,
         name: String,
+        category: String,
         mealType: DishMealType,
         imageBase64: String?,
         recipe: String,
+        recipeSteps: String,
         preparationMinutes: Int?,
         servings: Int?,
         notes: String,
@@ -85,9 +87,11 @@ class RoomDishRepository @Inject constructor(
             householdId = device.householdId,
             name = name.trim(),
             normalizedName = Normalizer.normalizeText(name),
+            category = category.trim(),
             mealType = mealType.name,
             imageBase64 = imageBase64,
             recipe = recipe.trim(),
+            recipeSteps = recipeSteps.trim(),
             preparationMinutes = preparationMinutes?.takeIf { it >= 0 },
             servings = servings?.takeIf { it > 0 },
             notes = notes.trim(),
@@ -162,7 +166,7 @@ class RoomDishRepository @Inject constructor(
             deviceId = device.deviceId,
             entityType = "dish",
             entityId = entity.id,
-            payload = DishSyncPayloadCodec.encodeDish(DishSyncPayload(entity.id, entity.householdId, entity.name, entity.normalizedName, entity.mealType, entity.imageBase64, entity.recipe, entity.preparationMinutes, entity.servings, entity.notes, entity.deleted, entity.createdAt, entity.updatedAt, entity.version, entity.updatedByDevice)),
+            payload = DishSyncPayloadCodec.encodeDish(DishSyncPayload(entity.id, entity.householdId, entity.name, entity.normalizedName, entity.category, entity.mealType, entity.imageBase64, entity.recipe, entity.recipeSteps, entity.preparationMinutes, entity.servings, entity.notes, entity.deleted, entity.createdAt, entity.updatedAt, entity.version, entity.updatedByDevice)),
             version = entity.version,
             updatedAt = entity.updatedAt,
             deleted = entity.deleted,
@@ -185,7 +189,7 @@ class RoomDishRepository @Inject constructor(
         )
     }
 
-    private fun DishEntity.toModel() = Dish(id, name, runCatching { DishMealType.valueOf(mealType) }.getOrDefault(DishMealType.BOTH), imageBase64, recipe, preparationMinutes, servings, notes, deleted, createdAt, updatedAt, version)
+    private fun DishEntity.toModel() = Dish(id, name, category, runCatching { DishMealType.valueOf(mealType) }.getOrDefault(DishMealType.BOTH), imageBase64, recipe, recipeSteps, preparationMinutes, servings, notes, deleted, createdAt, updatedAt, version)
     private fun DishIngredientEntity.toModel() = DishIngredient(id, dishId, name, quantity, unit, sortOrder, deleted, variantId)
     private fun DishVariantEntity.toModel() = DishVariant(id, dishId, name, recipe, notes, deleted)
 

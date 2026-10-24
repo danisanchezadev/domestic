@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 30,
-    "identityHash": "474d8143b2055c038d33bbdbe2768ad3",
+    "identityHash": "fd4848d49155f0d6c4fd30b3df761524",
     "entities": [
       {
         "tableName": "device_identity",
@@ -798,7 +798,7 @@
       },
       {
         "tableName": "weekly_menu_items",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `householdId` TEXT NOT NULL, `dayOfWeek` INTEGER NOT NULL, `mealSlot` TEXT NOT NULL, `dishId` TEXT, `variantId` TEXT, `title` TEXT NOT NULL, `normalizedTitle` TEXT NOT NULL, `notes` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `version` INTEGER NOT NULL, `updatedByDevice` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `householdId` TEXT NOT NULL DEFAULT '', `dayOfWeek` INTEGER NOT NULL, `mealSlot` TEXT NOT NULL, `dishId` TEXT, `variantId` TEXT, `title` TEXT NOT NULL, `normalizedTitle` TEXT NOT NULL, `notes` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `version` INTEGER NOT NULL, `updatedByDevice` TEXT NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -810,7 +810,8 @@
             "fieldPath": "householdId",
             "columnName": "householdId",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "''"
           },
           {
             "fieldPath": "dayOfWeek",
@@ -925,6 +926,24 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_weekly_menu_items_normalizedTitle` ON `${TABLE_NAME}` (`normalizedTitle`)"
+          },
+          {
+            "name": "index_weekly_menu_items_dishId",
+            "unique": false,
+            "columnNames": [
+              "dishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_weekly_menu_items_dishId` ON `${TABLE_NAME}` (`dishId`)"
+          },
+          {
+            "name": "index_weekly_menu_items_variantId",
+            "unique": false,
+            "columnNames": [
+              "variantId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_weekly_menu_items_variantId` ON `${TABLE_NAME}` (`variantId`)"
           }
         ]
       },
@@ -1881,6 +1900,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_dish_ingredients_normalizedName` ON `${TABLE_NAME}` (`normalizedName`)"
+          },
+          {
+            "name": "index_dish_ingredients_variantId",
+            "unique": false,
+            "columnNames": [
+              "variantId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dish_ingredients_variantId` ON `${TABLE_NAME}` (`variantId`)"
           }
         ]
       },
@@ -2306,7 +2334,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '474d8143b2055c038d33bbdbe2768ad3')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'fd4848d49155f0d6c4fd30b3df761524')"
     ]
   }
 }

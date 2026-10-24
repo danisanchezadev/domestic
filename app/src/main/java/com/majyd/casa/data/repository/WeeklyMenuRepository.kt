@@ -24,5 +24,6 @@ interface WeeklyMenuRepository {
     suspend fun deleteItem(itemId: String): WeeklyMenuItem?
     suspend fun restoreItem(itemId: String): WeeklyMenuItem?
     suspend fun archiveAll()
+    suspend fun copyActiveMenu(): List<WeeklyMenuItem>
     suspend fun setHistoryCompleted(historyId: String, completed: Boolean)
 }

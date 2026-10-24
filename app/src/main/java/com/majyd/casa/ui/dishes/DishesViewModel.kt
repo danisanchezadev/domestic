@@ -20,9 +20,12 @@ import kotlinx.coroutines.launch
 data class DishDraft(
     val dishId: String? = null,
     val name: String = "",
+    val category: String = "",
     val mealType: DishMealType = DishMealType.BOTH,
     val imageBase64: String? = null,
     val recipe: String = "",
+    val recipeSteps: String = "",
+    val steps: List<String> = emptyList(),
     val preparationMinutes: String = "",
     val servings: String = "",
     val notes: String = "",
@@ -46,6 +49,14 @@ data class DishesUiState(
     val draft: DishDraft = DishDraft(),
     val editorOpen: Boolean = false,
     val usageStats: Map<String, DishUsageStats> = emptyMap(),
+    val detail: DishDetail? = null,
+)
+
+data class DishDetail(
+    val dish: Dish,
+    val ingredients: List<DraftIngredient> = emptyList(),
+    val variants: List<DraftVariant> = emptyList(),
+    val usageStats: DishUsageStats = DishUsageStats(),
 )
 
 @HiltViewModel
@@ -58,6 +69,7 @@ class DishesViewModel @Inject constructor(
     private val query = MutableStateFlow("")
     private val mealFilter = MutableStateFlow<DishMealType?>(null)
     private val usageStats = MutableStateFlow<Map<String, DishUsageStats>>(emptyMap())
+    private val detail = MutableStateFlow<DishDetail?>(null)
     private val dishes = repository.observeDishes().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val baseUiState = combine(dishes, draft, editorOpen, query, mealFilter) { items, draftValue, open, queryValue, filter ->
@@ -74,8 +86,8 @@ class DishesViewModel @Inject constructor(
         )
     }
 
-    val uiState: StateFlow<DishesUiState> = combine(baseUiState, usageStats) { state, stats ->
-        state.copy(usageStats = stats)
+    val uiState: StateFlow<DishesUiState> = combine(baseUiState, usageStats, detail) { state, stats, detailValue ->
+        state.copy(usageStats = stats, detail = detailValue)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DishesUiState())
 
     init {
@@ -87,19 +99,41 @@ class DishesViewModel @Inject constructor(
     }
 
     fun openNew() {
-        draft.value = DishDraft()
+        draft.value = DishDraft(preparationMinutes = "1", servings = "2")
         editorOpen.value = true
     }
+
+    fun openDetail(dish: Dish) = viewModelScope.launch {
+        val ingredients = repository.getIngredients(dish.id).filterNot { it.deleted }
+            .map { DraftIngredient(it.id, it.name, it.quantity?.toString().orEmpty(), it.unit) }
+        val variants = repository.getVariants(dish.id).filterNot { it.deleted }.map { variant ->
+            DraftVariant(
+                id = variant.id,
+                name = variant.name,
+                recipe = variant.recipe,
+                notes = variant.notes,
+                ingredients = repository.getIngredients(dish.id, variant.id).filterNot { it.deleted }.map {
+                    DraftIngredient(it.id, it.name, it.quantity?.toString().orEmpty(), it.unit)
+                },
+            )
+        }
+        detail.value = DishDetail(dish, ingredients, variants, usageStats.value[dish.id] ?: DishUsageStats())
+    }
+
+    fun closeDetail() { detail.value = null }
 
     fun edit(dish: Dish) {
         draft.value = DishDraft(
             dishId = dish.id,
             name = dish.name,
+            category = dish.category,
             mealType = dish.mealType,
             imageBase64 = dish.imageBase64,
             recipe = dish.recipe,
-            preparationMinutes = dish.preparationMinutes?.toString().orEmpty(),
-            servings = dish.servings?.toString().orEmpty(),
+            recipeSteps = dish.recipeSteps,
+            steps = dish.recipeSteps.lines().map { it.trim() }.filter { it.isNotBlank() },
+            preparationMinutes = (dish.preparationMinutes ?: 1).coerceAtLeast(1).toString(),
+            servings = (dish.servings ?: 2).coerceAtLeast(1).toString(),
             notes = dish.notes,
         )
         editorOpen.value = true
@@ -133,9 +167,17 @@ class DishesViewModel @Inject constructor(
     fun updateQuery(value: String) { query.value = value }
     fun updateMealFilter(value: DishMealType?) { mealFilter.value = value }
     fun updateName(value: String) = draft.update { it.copy(name = value) }
+    fun updateCategory(value: String) = draft.update { it.copy(category = value) }
     fun updateMealType(value: DishMealType) = draft.update { it.copy(mealType = value) }
     fun updateImage(value: String?) = draft.update { it.copy(imageBase64 = value) }
     fun updateRecipe(value: String) = draft.update { it.copy(recipe = value) }
+    fun updateRecipeSteps(value: String) = draft.update { it.copy(recipeSteps = value) }
+    fun addStep(value: String) {
+        if (value.trim().isNotBlank()) draft.update { it.copy(steps = it.steps + value.trim()) }
+    }
+    fun removeStep(index: Int) = draft.update { state ->
+        state.copy(steps = state.steps.filterIndexed { position, _ -> position != index })
+    }
     fun updatePreparationMinutes(value: String) = draft.update { it.copy(preparationMinutes = value) }
     fun updateServings(value: String) = draft.update { it.copy(servings = value) }
     fun updateNotes(value: String) = draft.update { it.copy(notes = value) }
@@ -168,9 +210,11 @@ class DishesViewModel @Inject constructor(
         val saved = repository.saveDish(
             dishId = current.dishId,
             name = current.name,
+            category = current.category,
             mealType = current.mealType,
             imageBase64 = current.imageBase64,
             recipe = current.recipe,
+            recipeSteps = current.steps.joinToString("\n"),
             preparationMinutes = current.preparationMinutes.toIntOrNull(),
             servings = current.servings.toIntOrNull(),
             notes = current.notes,
@@ -198,5 +242,6 @@ class DishesViewModel @Inject constructor(
     fun delete(dish: Dish) = viewModelScope.launch {
         repository.deleteDish(dish.id)
         editorOpen.value = false
+        detail.value = null
     }
 }

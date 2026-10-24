@@ -3,9 +3,11 @@ package com.majyd.casa.data.model
 data class Dish(
     val id: String,
     val name: String,
+    val category: String,
     val mealType: DishMealType,
     val imageBase64: String?,
     val recipe: String,
+    val recipeSteps: String,
     val preparationMinutes: Int?,
     val servings: Int?,
     val notes: String,

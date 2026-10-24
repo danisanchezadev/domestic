@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "dish_ingredients",
-    indices = [Index(value = ["dishId"]), Index(value = ["normalizedName"])],
+    indices = [Index(value = ["dishId"]), Index(value = ["normalizedName"]), Index(value = ["variantId"])],
 )
 data class DishIngredientEntity(
     @PrimaryKey val id: String,

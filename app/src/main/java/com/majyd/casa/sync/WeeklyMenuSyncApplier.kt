@@ -35,7 +35,7 @@ class WeeklyMenuSyncApplier @Inject constructor(
                     .filterNot { ingredient -> ingredient.deleted }
                     .forEach { ingredient ->
                         if (payload.shoppingIngredientIds == null || ingredient.id in payload.shoppingIngredientIds) {
-                            shoppingRepository.addIngredientToDefaultList(ingredient.name, ingredient.quantity ?: 1.0, ingredient.unit)
+                            shoppingRepository.addIngredientToActiveList(ingredient.name, ingredient.quantity ?: 1.0, ingredient.unit)
                         }
                     }
             }

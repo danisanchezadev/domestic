@@ -211,17 +211,21 @@ class RoomShoppingRepository @Inject constructor(
         entity.toModel()
     }
 
-    override suspend fun addIngredientToDefaultList(name: String, quantity: Double, unit: String): ShoppingProduct {
+    override suspend fun addIngredientToActiveList(name: String, quantity: Double, unit: String): ShoppingProduct {
         val cleanName = name.trim()
         val normalizedName = Normalizer.normalizeText(cleanName)
         require(normalizedName.isNotBlank()) { "El ingrediente no puede estar vacio" }
         ensureDefaults()
-        val existing = productDao.getActiveByName(DEFAULT_LIST_ID, normalizedName)
+        val availableLists = listDao.getLists()
+        val activeListId = availableLists.firstOrNull { productDao.getProducts(it.id).isNotEmpty() }?.id
+            ?: availableLists.firstOrNull()?.id
+            ?: DEFAULT_LIST_ID
+        val existing = productDao.getActiveByName(activeListId, normalizedName)
         if (existing != null) {
             return existing.toModel()
         }
         return upsertProduct(
-            listId = DEFAULT_LIST_ID,
+            listId = activeListId,
             productId = null,
             name = cleanName,
             categoryId = null,

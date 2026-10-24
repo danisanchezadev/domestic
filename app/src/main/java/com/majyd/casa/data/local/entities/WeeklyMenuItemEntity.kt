@@ -3,6 +3,7 @@ package com.majyd.casa.data.local.entities
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity(
     tableName = "weekly_menu_items",
@@ -11,11 +12,13 @@ import androidx.room.PrimaryKey
         Index(value = ["dayOfWeek"]),
         Index(value = ["mealSlot"]),
         Index(value = ["normalizedTitle"]),
+        Index(value = ["dishId"]),
+        Index(value = ["variantId"]),
     ],
 )
 data class WeeklyMenuItemEntity(
     @PrimaryKey val id: String,
-    val householdId: String,
+    @ColumnInfo(defaultValue = "") val householdId: String,
     val dayOfWeek: Int,
     val mealSlot: String,
     val dishId: String?,

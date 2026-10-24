@@ -67,7 +67,7 @@ import com.majyd.casa.data.local.entities.MenuHistoryItemEntity
         MenuTemplateItemEntity::class,
         MenuHistoryItemEntity::class,
     ],
-    version = 30,
+    version = 31,
     exportSchema = true,
 )
 abstract class CasaDatabase : RoomDatabase() {

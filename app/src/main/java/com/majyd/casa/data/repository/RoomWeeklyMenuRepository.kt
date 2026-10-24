@@ -134,6 +134,24 @@ class RoomWeeklyMenuRepository @Inject constructor(
         }
     }
 
+    override suspend fun copyActiveMenu(): List<WeeklyMenuItem> {
+        val sourceItems = weeklyMenuDao.getActive().map { it.toModel() }
+        if (sourceItems.isEmpty()) return emptyList()
+        archiveAll()
+        return sourceItems.map { item ->
+            upsertItem(
+                itemId = null,
+                dayOfWeek = item.dayOfWeek,
+                mealSlot = item.mealSlot,
+                dishId = item.dishId,
+                variantId = item.variantId,
+                title = item.title,
+                notes = item.notes,
+                shoppingIngredientIds = emptySet(),
+            )
+        }
+    }
+
     override suspend fun setHistoryCompleted(historyId: String, completed: Boolean) {
         database.withTransaction {
             val dao = database.menuHistoryDao()
@@ -161,7 +179,7 @@ class RoomWeeklyMenuRepository @Inject constructor(
         if (dishId == null) return
         val ingredients = dishDao.getIngredients(dishId, variantId)
         ingredients.filterNot { it.deleted }.filter { selectedIds == null || it.id in selectedIds }.forEach { ingredient ->
-            shoppingRepository.addIngredientToDefaultList(
+            shoppingRepository.addIngredientToActiveList(
                 name = ingredient.name,
                 quantity = ingredient.quantity ?: 1.0,
                 unit = ingredient.unit,

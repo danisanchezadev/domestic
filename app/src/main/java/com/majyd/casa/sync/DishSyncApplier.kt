@@ -35,7 +35,7 @@ class DishSyncApplier @Inject constructor(
         val dao = database.dishDao()
         val local = dao.getById(payload.id)
         if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, payload.updatedByDevice.ifBlank { operation.deviceId })) {
-            dao.upsertDish(DishEntity(payload.id, payload.householdId, payload.name, payload.normalizedName, payload.mealType, payload.imageBase64, payload.recipe, payload.preparationMinutes, payload.servings, payload.notes, payload.deleted, payload.createdAt, payload.updatedAt, payload.version, payload.updatedByDevice.ifBlank { operation.deviceId }))
+            dao.upsertDish(DishEntity(payload.id, payload.householdId, payload.name, payload.normalizedName, payload.category, payload.mealType, payload.imageBase64, payload.recipe, payload.recipeSteps, payload.preparationMinutes, payload.servings, payload.notes, payload.deleted, payload.createdAt, payload.updatedAt, payload.version, payload.updatedByDevice.ifBlank { operation.deviceId }))
         }
         return true
     }
