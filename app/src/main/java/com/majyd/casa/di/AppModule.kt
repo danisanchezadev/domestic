@@ -110,6 +110,14 @@ object AppProvidesModule {
 
     @Provides
     @Singleton
+    fun provideCalendarEventExceptionDao(database: CasaDatabase) = database.calendarEventExceptionDao()
+
+    @Provides
+    @Singleton
+    fun provideRecipeCategoryDao(database: CasaDatabase) = database.recipeCategoryDao()
+
+    @Provides
+    @Singleton
     fun provideContactDao(database: CasaDatabase) = database.contactDao()
 
     @Provides

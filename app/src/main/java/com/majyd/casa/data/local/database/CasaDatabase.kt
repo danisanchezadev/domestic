@@ -31,12 +31,17 @@ import com.majyd.casa.data.local.entities.TaskHistoryEntity
 import com.majyd.casa.data.local.entities.ContactEntity
 import com.majyd.casa.data.local.entities.ContactCategoryEntity
 import com.majyd.casa.data.local.entities.CalendarPlaceEntity
+import com.majyd.casa.data.local.entities.CalendarEventExceptionEntity
+import com.majyd.casa.data.local.dao.CalendarEventExceptionDao
 import com.majyd.casa.data.local.entities.DishEntity
 import com.majyd.casa.data.local.entities.DishIngredientEntity
 import com.majyd.casa.data.local.entities.DishVariantEntity
 import com.majyd.casa.data.local.entities.MenuTemplateEntity
 import com.majyd.casa.data.local.entities.MenuTemplateItemEntity
 import com.majyd.casa.data.local.entities.MenuHistoryItemEntity
+import com.majyd.casa.data.local.entities.RecipeCategoryEntity
+import com.majyd.casa.data.local.entities.RecipeCategoryLinkEntity
+import com.majyd.casa.data.local.dao.RecipeCategoryDao
 
 @Database(
     entities = [
@@ -60,14 +65,17 @@ import com.majyd.casa.data.local.entities.MenuHistoryItemEntity
         ContactEntity::class,
         ContactCategoryEntity::class,
         CalendarPlaceEntity::class,
+        CalendarEventExceptionEntity::class,
         DishEntity::class,
         DishIngredientEntity::class,
         DishVariantEntity::class,
         MenuTemplateEntity::class,
         MenuTemplateItemEntity::class,
         MenuHistoryItemEntity::class,
+        RecipeCategoryEntity::class,
+        RecipeCategoryLinkEntity::class,
     ],
-    version = 31,
+    version = 38,
     exportSchema = true,
 )
 abstract class CasaDatabase : RoomDatabase() {
@@ -87,7 +95,9 @@ abstract class CasaDatabase : RoomDatabase() {
     abstract fun contactDao(): com.majyd.casa.data.local.dao.ContactDao
     abstract fun contactCategoryDao(): com.majyd.casa.data.local.dao.ContactCategoryDao
     abstract fun calendarPlaceDao(): com.majyd.casa.data.local.dao.CalendarPlaceDao
+    abstract fun calendarEventExceptionDao(): CalendarEventExceptionDao
     abstract fun dishDao(): com.majyd.casa.data.local.dao.DishDao
     abstract fun menuTemplateDao(): com.majyd.casa.data.local.dao.MenuTemplateDao
     abstract fun menuHistoryDao(): com.majyd.casa.data.local.dao.MenuHistoryDao
+    abstract fun recipeCategoryDao(): RecipeCategoryDao
 }

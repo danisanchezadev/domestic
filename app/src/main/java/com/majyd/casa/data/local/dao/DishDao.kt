@@ -10,8 +10,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DishDao {
-    @Query("SELECT * FROM dishes WHERE deleted = 0 ORDER BY name COLLATE NOCASE ASC")
-    fun observeDishes(): Flow<List<DishEntity>>
+    @Query("SELECT * FROM dishes WHERE deleted = 0 AND collection = :collection ORDER BY name COLLATE NOCASE ASC")
+    fun observeDishes(collection: String = "MENU"): Flow<List<DishEntity>>
 
     @Query("SELECT * FROM dishes WHERE id = :dishId LIMIT 1")
     suspend fun getById(dishId: String): DishEntity?

@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.majyd.casa.data.model.AppPreferences
+import com.majyd.casa.data.model.DishCollection
 import com.majyd.casa.ui.home.HomeScreen
 import com.majyd.casa.ui.module.ModulePlaceholderScreen
 import com.majyd.casa.ui.search.SearchScreen
@@ -60,6 +61,9 @@ fun CasaNavHost(
         composable(AppDestination.Dishes.route) {
             DishesScreen(onBack = { navController.popBackStack() })
         }
+        composable(AppDestination.RecipeBook.route) {
+            DishesScreen(onBack = { navController.popBackStack() }, collection = DishCollection.RECIPE_BOOK)
+        }
         composable(AppDestination.Contacts.route) {
             ContactsScreen(onBack = { navController.popBackStack() })
         }
@@ -87,6 +91,7 @@ fun CasaNavHost(
             AppDestination.Calendar,
             AppDestination.WeeklyMenu,
             AppDestination.Dishes,
+            AppDestination.RecipeBook,
             AppDestination.Contacts,
             AppDestination.Sync,
             AppDestination.Settings,

@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalLaundryService
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.RestaurantMenu
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Settings
@@ -29,6 +30,7 @@ sealed class AppDestination(
     data object Tasks : AppDestination("tasks", "Tareas", Icons.Filled.TaskAlt, "Tareas domésticas")
     data object Calendar : AppDestination("calendar", "Agenda", Icons.Filled.CalendarMonth, "Citas y eventos")
     data object Dishes : AppDestination("dishes", "Mis platos", Icons.Filled.Dining, "Catalogo de platos")
+    data object RecipeBook : AppDestination("recipe_book", "Recetario", Icons.Filled.MenuBook, "Catalogo de recetas")
     data object WeeklyMenu : AppDestination("menu", "Menú", Icons.Filled.RestaurantMenu, "Plan semanal")
     data object Plans : AppDestination("plans", "Planes", Icons.Filled.Dining, "Películas y experiencias")
     data object Trips : AppDestination("trips", "Viajes", Icons.Filled.Cabin, "Preparación de viajes")
@@ -46,6 +48,7 @@ val moduleDestinations = listOf(
     AppDestination.Tasks,
     AppDestination.Calendar,
     AppDestination.WeeklyMenu,
+    AppDestination.RecipeBook,
     AppDestination.Plans,
     AppDestination.Trips,
     AppDestination.Appliances,
@@ -60,6 +63,7 @@ fun DashboardCard.toDestination(): AppDestination = when (this) {
     DashboardCard.TASKS -> AppDestination.Tasks
     DashboardCard.CALENDAR -> AppDestination.Calendar
     DashboardCard.WEEKLY_MENU -> AppDestination.WeeklyMenu
+    DashboardCard.RECIPE_BOOK -> AppDestination.RecipeBook
     DashboardCard.PLANS -> AppDestination.Plans
     DashboardCard.TRIPS -> AppDestination.Trips
     DashboardCard.HOME -> AppDestination.Home

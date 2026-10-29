@@ -13,6 +13,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.draw.clip
@@ -25,6 +28,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
@@ -47,8 +51,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -57,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.majyd.casa.data.model.MealSlot
 import com.majyd.casa.data.model.Dish
 import com.majyd.casa.data.model.WeeklyMenuItem
+import com.majyd.casa.ui.components.RecipeCard
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +78,7 @@ fun WeeklyMenuScreen(
     var selectorOpen by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -86,26 +96,34 @@ fun WeeklyMenuScreen(
             )
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item {
-                WeeklyMenuGrid(
-                    items = state.activeItems,
-                    dishes = state.dishes,
-                    onSlotClick = { day, slot, item ->
-                        if (item == null) {
-                            viewModel.startNewForSlot(day, slot)
-                            selectorOpen = true
-                        } else {
-                            viewModel.openRecipe(item)
-                        }
-                    },
-                )
+        Box(Modifier.fillMaxSize()) {
+            Image(
+                painter = painterResource(com.majyd.casa.R.drawable.kitchen_background),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item {
+                    WeeklyMenuGrid(
+                        items = state.activeItems,
+                        dishes = state.dishes,
+                        onSlotClick = { day, slot, item ->
+                            if (item == null) {
+                                viewModel.startNewForSlot(day, slot)
+                                selectorOpen = true
+                            } else {
+                                viewModel.openRecipe(item)
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -132,7 +150,7 @@ fun WeeklyMenuScreen(
         )
     }
     state.recipeDetail?.let { recipe ->
-        RecipeDetailDialog(
+        RecipeDetailScreen(
             detail = recipe,
             onDismiss = viewModel::closeRecipe,
             onDelete = viewModel::deleteRecipeAssignment,
@@ -158,44 +176,50 @@ private fun WeeklyMenuGrid(
     dishes: List<Dish>,
     onSlotClick: (Int, MealSlot, WeeklyMenuItem?) -> Unit,
 ) {
-    Card {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                "Menú semanal",
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            MenuBadge("Menú semanal", modifier = Modifier.fillMaxWidth(), centered = true)
             dayLabels().forEachIndexed { index, label ->
                 val day = index + 1
                 val dayItems = items.filter { it.dayOfWeek == day }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MenuSlotCard(
-                                title = "Comida",
-                                item = dayItems.firstOrNull { it.mealSlot == MealSlot.LUNCH },
-                                dishes = dishes,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onSlotClick(day, MealSlot.LUNCH, dayItems.firstOrNull { it.mealSlot == MealSlot.LUNCH }) },
-                            )
-                            MenuSlotCard(
-                                title = "Cena",
-                                item = dayItems.firstOrNull { it.mealSlot == MealSlot.DINNER },
-                                dishes = dishes,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onSlotClick(day, MealSlot.DINNER, dayItems.firstOrNull { it.mealSlot == MealSlot.DINNER }) },
-                            )
-                        }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MenuBadge(label)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        MenuSlotCard(
+                            title = "Comida",
+                            item = dayItems.firstOrNull { it.mealSlot == MealSlot.LUNCH },
+                            dishes = dishes,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSlotClick(day, MealSlot.LUNCH, dayItems.firstOrNull { it.mealSlot == MealSlot.LUNCH }) },
+                        )
+                        MenuSlotCard(
+                            title = "Cena",
+                            item = dayItems.firstOrNull { it.mealSlot == MealSlot.DINNER },
+                            dishes = dishes,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSlotClick(day, MealSlot.DINNER, dayItems.firstOrNull { it.mealSlot == MealSlot.DINNER }) },
+                        )
                     }
                 }
             }
         }
+    }
+
+@Composable
+private fun MenuBadge(text: String, modifier: Modifier = Modifier, centered: Boolean = false) {
+    Box(
+        modifier = modifier
+            .then(if (centered) Modifier else Modifier.wrapContentWidth())
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = if (centered) Alignment.Center else Alignment.CenterStart,
+    ) {
+        Text(
+            text,
+            color = MaterialTheme.colorScheme.onPrimary,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = if (centered) TextAlign.Center else TextAlign.Start,
+        )
     }
 }
 
@@ -208,41 +232,48 @@ private fun MenuSlotCard(
     onClick: () -> Unit,
 ) {
     Card(modifier = modifier.clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(title, style = MaterialTheme.typography.labelMedium)
-            item?.let { MenuDishPreview(it, dishes) }
-                ?: Text("Sin asignar", style = MaterialTheme.typography.bodySmall)
+            item?.let { MenuDishPreview(it, dishes, onClick) }
+                ?: EmptyMenuDishCard()
         }
     }
 }
 
 @Composable
-private fun MenuDishPreview(item: WeeklyMenuItem, dishes: List<Dish>) {
-    val dish = dishes.firstOrNull { it.id == item.dishId }
-    val bitmap = dish?.imageBase64?.let(::decodeDishImage)
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (bitmap != null) {
-            Card(
-                modifier = Modifier.fillMaxWidth().size(72.dp),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
-            ) {
-                Image(
-                    bitmap.asImageBitmap(),
-                    contentDescription = dish?.name,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-        } else {
-            Box(
-                modifier = Modifier.fillMaxWidth().size(72.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Restaurant, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            }
+private fun EmptyMenuDishCard() {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(104.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary), RoundedCornerShape(13.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Sin plato", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         }
-        Text(dish?.name ?: item.title, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+        Text(
+            "Sin decidir",
+            modifier = Modifier.fillMaxWidth().height(42.dp),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Row(Modifier.fillMaxWidth().height(28.dp), horizontalArrangement = Arrangement.Center) {
+            Text("—", color = MaterialTheme.colorScheme.outline)
+        }
+    }
+}
+
+@Composable
+private fun MenuDishPreview(item: WeeklyMenuItem, dishes: List<Dish>, onClick: () -> Unit = {}) {
+    val dish = dishes.firstOrNull { it.id == item.dishId }
+    if (dish != null) {
+        RecipeCard(dish = dish, modifier = Modifier.fillMaxWidth(), compact = true, onOpen = onClick)
+    } else {
+        Text(item.title, style = MaterialTheme.typography.bodySmall, maxLines = 2)
     }
 }
 
@@ -284,6 +315,46 @@ private fun DayDetailDialog(
 }
 
 @Composable
+private fun RecipeDetailScreen(
+    detail: RecipeDetailState,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val bitmap = detail.dish.imageBase64?.let(::decodeDishImage)
+    val steps = detail.dish.recipeSteps.lines().filter { it.isNotBlank() }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp))) {
+            Image(painterResource(com.majyd.casa.R.drawable.kitchen_background), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
+                    Text(detail.dish.name, color = MaterialTheme.colorScheme.onPrimary, textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                }
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item {
+                        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)).border(BorderStroke(1.dp, MaterialTheme.colorScheme.primary), RoundedCornerShape(16.dp))) {
+                            if (bitmap != null) Image(bitmap.asImageBitmap(), detail.dish.name, Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+                            else Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Restaurant, "Sin imagen", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp)) }
+                        }
+                    }
+                    item { RecipeSection("Ingredientes") { if (detail.ingredients.isEmpty()) Text("Sin ingredientes") else detail.ingredients.forEach { Text(listOfNotNull(it.name, it.quantity?.toString(), it.unit.takeIf { unit -> unit.isNotBlank() }).joinToString(" ")) } } }
+                    item { RecipeSection("Pasos") { if (steps.isEmpty()) Text("Sin pasos indicados") else steps.forEachIndexed { index, step -> Text("${index + 1}. $step") } } }
+                    if (detail.variants.isNotEmpty()) item { RecipeSection("Variantes") { detail.variants.forEach { variant -> Text(variant.name); variant.recipe.takeIf { it.isNotBlank() }?.let { Text(it) }; variant.notes.takeIf { it.isNotBlank() }?.let { Text(it) } } } }
+                    item { RecipeSection("Tiempo") { Text(detail.dish.preparationMinutes?.let { "$it minutos" } ?: "No indicado") } }
+                    item { RecipeSection("Raciones") { Text(detail.dish.servings?.let { "$it raciones" } ?: "No indicadas") } }
+                }
+                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), RoundedCornerShape(14.dp)).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = onDismiss, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) { Text("Volver") }
+                    Button(onClick = onDelete, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Eliminar plato") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun RecipeDetailDialog(
     detail: RecipeDetailState,
     onDismiss: () -> Unit,
@@ -292,74 +363,123 @@ private fun RecipeDetailDialog(
     val bitmap = detail.dish.imageBase64?.let(::decodeDishImage)
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color.Transparent,
         title = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(detail.dish.name, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    detail.dish.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    textAlign = TextAlign.Center,
+                )
             }
         },
         text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
-                    ) {
-                        if (bitmap != null) {
-                            Image(
-                                bitmap.asImageBitmap(),
-                                contentDescription = detail.dish.name,
-                                modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(16.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().height(120.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(Icons.Filled.Restaurant, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
-                }
-                item {
-                    RecipeSection("Ingredientes") {
-                        if (detail.ingredients.isEmpty()) {
-                            Text("Sin ingredientes")
-                        } else {
-                            detail.ingredients.forEach { ingredient ->
-                                Text(
-                                    listOfNotNull(
-                                        ingredient.name,
-                                        ingredient.quantity?.toString(),
-                                        ingredient.unit.takeIf { it.isNotBlank() },
-                                    ).joinToString(" "),
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp)),
+            ) {
+                Image(
+                    painter = painterResource(com.majyd.casa.R.drawable.kitchen_background),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                LazyColumn(
+                    modifier = Modifier.padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        ) {
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap.asImageBitmap(),
+                                    contentDescription = detail.dish.name,
+                                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(16.dp)),
+                                    contentScale = ContentScale.Crop,
                                 )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(Icons.Filled.Restaurant, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
                     }
-                }
-                val steps = detail.dish.recipeSteps.lines().filter { it.isNotBlank() }
-                item {
-                    RecipeSection("Pasos") {
-                        if (steps.isEmpty()) {
-                            Text("Sin pasos indicados")
-                        } else {
-                            steps.forEachIndexed { index, step -> Text("${index + 1}. $step") }
+                    item {
+                        RecipeSection("Ingredientes") {
+                            if (detail.ingredients.isEmpty()) {
+                                Text("Sin ingredientes")
+                            } else {
+                                detail.ingredients.forEach { ingredient ->
+                                    Text(
+                                        listOfNotNull(
+                                            ingredient.name,
+                                            ingredient.quantity?.toString(),
+                                            ingredient.unit.takeIf { it.isNotBlank() },
+                                        ).joinToString(" "),
+                                    )
+                                }
+                            }
                         }
                     }
-                }
-                item {
-                    RecipeSection("Tiempo estimado") {
-                        Text(detail.dish.preparationMinutes?.let { "$it minutos" } ?: "No indicado")
+                    val steps = detail.dish.recipeSteps.lines().filter { it.isNotBlank() }
+                    item {
+                        RecipeSection("Pasos") {
+                            if (steps.isEmpty()) {
+                                Text("Sin pasos indicados")
+                            } else {
+                                steps.forEachIndexed { index, step -> Text("${index + 1}. $step") }
+                            }
+                        }
                     }
+                    if (detail.variants.isNotEmpty()) {
+                        item {
+                            RecipeSection("Variantes") {
+                                detail.variants.forEach { variant ->
+                                    Text(variant.name)
+                                    variant.recipe.takeIf { it.isNotBlank() }?.let { Text(it) }
+                                    variant.notes.takeIf { it.isNotBlank() }?.let { Text(it) }
+                                }
+                            }
+                        }
+                    }
+                    item { RecipeSection("Tiempo") { Text(detail.dish.preparationMinutes?.let { "$it minutos" } ?: "No indicado") } }
+                    item { RecipeSection("Raciones") { Text(detail.dish.servings?.let { "$it raciones" } ?: "No indicadas") } }
                 }
             }
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss) { Text("Volver") }
-                Button(onClick = onDelete) { Text("Eliminar plato") }
+                TextButton(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.textButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                ) { Text("Volver") }
+                Button(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                ) { Text("Eliminar plato") }
             }
         },
     )
@@ -367,13 +487,18 @@ private fun RecipeDetailDialog(
 
 @Composable
 private fun RecipeSection(title: String, content: @Composable () -> Unit) {
-    Card(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f), RoundedCornerShape(14.dp))
+                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.primary), RoundedCornerShape(14.dp))
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             content()
         }

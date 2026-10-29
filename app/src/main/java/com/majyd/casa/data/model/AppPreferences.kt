@@ -35,6 +35,7 @@ data class AppPreferences(
             DashboardCard.TASKS,
             DashboardCard.CALENDAR,
             DashboardCard.WEEKLY_MENU,
+            DashboardCard.RECIPE_BOOK,
             DashboardCard.PLANS,
             DashboardCard.TRIPS,
             DashboardCard.HOME,

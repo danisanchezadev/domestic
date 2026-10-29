@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.majyd.casa.data.model.Dish
 import com.majyd.casa.data.model.DishMealType
 import com.majyd.casa.data.model.DishUsageStats
+import com.majyd.casa.data.model.DishCollection
+import com.majyd.casa.data.model.RecipeCategory
 import com.majyd.casa.data.repository.DishRepository
 import com.majyd.casa.data.repository.WeeklyMenuRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -29,8 +32,10 @@ data class DishDraft(
     val preparationMinutes: String = "",
     val servings: String = "",
     val notes: String = "",
+    val preparationRequired: Boolean = false,
     val ingredients: List<DraftIngredient> = emptyList(),
     val variants: List<DraftVariant> = emptyList(),
+    val categoryIds: Set<String> = emptySet(),
 )
 
 data class DraftIngredient(val id: String? = null, val name: String, val quantity: String = "", val unit: String = "")
@@ -50,6 +55,7 @@ data class DishesUiState(
     val editorOpen: Boolean = false,
     val usageStats: Map<String, DishUsageStats> = emptyMap(),
     val detail: DishDetail? = null,
+    val categories: List<RecipeCategory> = emptyList(),
 )
 
 data class DishDetail(
@@ -70,7 +76,14 @@ class DishesViewModel @Inject constructor(
     private val mealFilter = MutableStateFlow<DishMealType?>(null)
     private val usageStats = MutableStateFlow<Map<String, DishUsageStats>>(emptyMap())
     private val detail = MutableStateFlow<DishDetail?>(null)
-    private val dishes = repository.observeDishes().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val collection = MutableStateFlow(DishCollection.MENU)
+    private val categories = repository.observeRecipeCategories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val dishes = collection.flatMapLatest { repository.observeDishes(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun setCollection(value: DishCollection) {
+        collection.value = value
+        if (value == DishCollection.RECIPE_BOOK) viewModelScope.launch { repository.ensureRecipeCategories() }
+    }
 
     private val baseUiState = combine(dishes, draft, editorOpen, query, mealFilter) { items, draftValue, open, queryValue, filter ->
         val normalizedQuery = queryValue.trim()
@@ -86,8 +99,8 @@ class DishesViewModel @Inject constructor(
         )
     }
 
-    val uiState: StateFlow<DishesUiState> = combine(baseUiState, usageStats, detail) { state, stats, detailValue ->
-        state.copy(usageStats = stats, detail = detailValue)
+    val uiState: StateFlow<DishesUiState> = combine(baseUiState, usageStats, detail, categories) { state, stats, detailValue, categoryItems ->
+        state.copy(usageStats = stats, detail = detailValue, categories = categoryItems)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DishesUiState())
 
     init {
@@ -104,20 +117,21 @@ class DishesViewModel @Inject constructor(
     }
 
     fun openDetail(dish: Dish) = viewModelScope.launch {
-        val ingredients = repository.getIngredients(dish.id).filterNot { it.deleted }
+        val currentDish = repository.getDish(dish.id) ?: dish
+        val ingredients = repository.getIngredients(currentDish.id).filterNot { it.deleted }
             .map { DraftIngredient(it.id, it.name, it.quantity?.toString().orEmpty(), it.unit) }
-        val variants = repository.getVariants(dish.id).filterNot { it.deleted }.map { variant ->
+        val variants = repository.getVariants(currentDish.id).filterNot { it.deleted }.map { variant ->
             DraftVariant(
                 id = variant.id,
                 name = variant.name,
                 recipe = variant.recipe,
                 notes = variant.notes,
-                ingredients = repository.getIngredients(dish.id, variant.id).filterNot { it.deleted }.map {
+                ingredients = repository.getIngredients(currentDish.id, variant.id).filterNot { it.deleted }.map {
                     DraftIngredient(it.id, it.name, it.quantity?.toString().orEmpty(), it.unit)
                 },
             )
         }
-        detail.value = DishDetail(dish, ingredients, variants, usageStats.value[dish.id] ?: DishUsageStats())
+        detail.value = DishDetail(currentDish, ingredients, variants, usageStats.value[currentDish.id] ?: DishUsageStats())
     }
 
     fun closeDetail() { detail.value = null }
@@ -135,6 +149,7 @@ class DishesViewModel @Inject constructor(
             preparationMinutes = (dish.preparationMinutes ?: 1).coerceAtLeast(1).toString(),
             servings = (dish.servings ?: 2).coerceAtLeast(1).toString(),
             notes = dish.notes,
+            preparationRequired = dish.preparationRequired,
         )
         editorOpen.value = true
         viewModelScope.launch {
@@ -143,6 +158,10 @@ class DishesViewModel @Inject constructor(
                 if (current.dishId != dish.id) current else current.copy(
                     ingredients = ingredients.map { DraftIngredient(it.id, it.name, it.quantity?.toString().orEmpty(), it.unit) },
                 )
+            }
+            if (collection.value == DishCollection.RECIPE_BOOK) {
+                val categoryIds = repository.getRecipeCategoryIds(dish.id)
+                draft.update { current -> if (current.dishId == dish.id) current.copy(categoryIds = categoryIds) else current }
             }
             val variants = repository.getVariants(dish.id)
             draft.update { current ->
@@ -163,6 +182,11 @@ class DishesViewModel @Inject constructor(
         }
     }
 
+    fun toggleCategory(categoryId: String) = draft.update { it.copy(categoryIds = if (categoryId in it.categoryIds) it.categoryIds - categoryId else it.categoryIds + categoryId) }
+    fun saveCategory(name: String) = viewModelScope.launch { repository.saveRecipeCategory(null, name) }
+    fun renameCategory(category: RecipeCategory, name: String) = viewModelScope.launch { repository.saveRecipeCategory(category.id, name) }
+    fun deleteCategory(category: RecipeCategory) = viewModelScope.launch { repository.deleteRecipeCategory(category.id) }
+
     fun closeEditor() { editorOpen.value = false }
     fun updateQuery(value: String) { query.value = value }
     fun updateMealFilter(value: DishMealType?) { mealFilter.value = value }
@@ -175,12 +199,17 @@ class DishesViewModel @Inject constructor(
     fun addStep(value: String) {
         if (value.trim().isNotBlank()) draft.update { it.copy(steps = it.steps + value.trim()) }
     }
+    fun updateStep(index: Int, value: String) = draft.update { state ->
+        if (index !in state.steps.indices || value.trim().isBlank()) state
+        else state.copy(steps = state.steps.mapIndexed { position, step -> if (position == index) value.trim() else step })
+    }
     fun removeStep(index: Int) = draft.update { state ->
         state.copy(steps = state.steps.filterIndexed { position, _ -> position != index })
     }
     fun updatePreparationMinutes(value: String) = draft.update { it.copy(preparationMinutes = value) }
     fun updateServings(value: String) = draft.update { it.copy(servings = value) }
     fun updateNotes(value: String) = draft.update { it.copy(notes = value) }
+    fun updatePreparationRequired(value: Boolean) = draft.update { it.copy(preparationRequired = value) }
     fun addIngredient(name: String, quantity: String, unit: String) {
         if (name.trim().isNotBlank()) draft.update { it.copy(ingredients = it.ingredients + DraftIngredient(name = name.trim(), quantity = quantity, unit = unit)) }
     }
@@ -210,7 +239,9 @@ class DishesViewModel @Inject constructor(
         val saved = repository.saveDish(
             dishId = current.dishId,
             name = current.name,
-            category = current.category,
+            category = if (collection.value == DishCollection.RECIPE_BOOK && current.categoryIds.isNotEmpty()) {
+                categories.value.filter { it.id in current.categoryIds }.joinToString(", ") { it.name }
+            } else current.category,
             mealType = current.mealType,
             imageBase64 = current.imageBase64,
             recipe = current.recipe,
@@ -218,10 +249,13 @@ class DishesViewModel @Inject constructor(
             preparationMinutes = current.preparationMinutes.toIntOrNull(),
             servings = current.servings.toIntOrNull(),
             notes = current.notes,
+            collection = collection.value,
+            preparationRequired = current.preparationRequired,
         )
         current.ingredients.forEachIndexed { index, ingredient ->
             repository.saveIngredient(ingredient.id, saved.id, ingredient.name, ingredient.quantity.toDoubleOrNull(), ingredient.unit, index)
         }
+        if (collection.value == DishCollection.RECIPE_BOOK) repository.setRecipeCategories(saved.id, current.categoryIds)
         current.variants.forEach { variant ->
             val savedVariant = repository.saveVariant(variant.id, saved.id, variant.name, variant.recipe, variant.notes)
             variant.ingredients.forEachIndexed { index, ingredient ->

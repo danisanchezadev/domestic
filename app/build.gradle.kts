@@ -34,7 +34,12 @@ val verifyStringEncoding = tasks.register("verifyStringEncoding") {
             byteArrayOf(0xC3.toByte(), 0x82.toByte()),
             byteArrayOf(0xC3.toByte(), 0xA2.toByte()),
         )
-        val sources = roots.flatMap { root -> root.walkTopDown().filter { it.isFile }.toList() }
+        val textExtensions = setOf("gradle", "java", "json", "kt", "kts", "md", "properties", "pro", "toml", "txt", "xml")
+        val sources = roots.flatMap { root ->
+            root.walkTopDown()
+                .filter { it.isFile && it.extension.lowercase() in textExtensions }
+                .toList()
+        }
         sources.forEach { source ->
             val bytes = source.readBytes()
             try {

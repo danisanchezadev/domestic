@@ -25,4 +25,19 @@ data class CalendarEventItem(
     val createdAt: Long,
     val updatedAt: Long,
     val version: Long,
+    val participantIds: Set<String> = emptySet(),
+    val recurrenceType: CalendarRecurrenceType = CalendarRecurrenceType.NONE,
+    val recurrenceInterval: Int = 1,
+    val recurrenceWeekdays: Set<Int> = emptySet(),
+    val recurrenceUntil: Long? = null,
+    val recurrenceCustomUnit: String = "DAYS",
 )
+
+enum class CalendarRecurrenceType(val label: String) {
+    NONE("No repetir"),
+    DAILY("Cada día"),
+    WEEKLY("Cada semana"),
+    MONTHLY("Cada mes"),
+    YEARLY("Cada año"),
+    CUSTOM("Personalizada"),
+}

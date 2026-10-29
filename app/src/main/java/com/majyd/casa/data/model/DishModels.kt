@@ -15,6 +15,14 @@ data class Dish(
     val createdAt: Long,
     val updatedAt: Long,
     val version: Long,
+    val categoryIds: Set<String> = emptySet(),
+    val preparationRequired: Boolean = false,
+)
+
+data class RecipeCategory(
+    val id: String,
+    val name: String,
+    val deleted: Boolean = false,
 )
 
 data class DishIngredient(
@@ -46,4 +54,9 @@ enum class DishMealType {
     LUNCH,
     DINNER,
     BOTH,
+}
+
+enum class DishCollection {
+    MENU,
+    RECIPE_BOOK,
 }

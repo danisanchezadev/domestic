@@ -51,6 +51,7 @@ data class RecipeDetailState(
     val item: WeeklyMenuItem,
     val dish: Dish,
     val ingredients: List<DishIngredient>,
+    val variants: List<DishVariant> = emptyList(),
 )
 
 @HiltViewModel
@@ -109,9 +110,12 @@ class WeeklyMenuViewModel @Inject constructor(
     }
 
     fun openRecipe(item: WeeklyMenuItem) = viewModelScope.launch {
-        val dish = dishes.value.firstOrNull { it.id == item.dishId } ?: return@launch
+        val dish = item.dishId?.let { dishRepository.getDish(it) }
+            ?: dishes.value.firstOrNull { it.id == item.dishId }
+            ?: return@launch
         val ingredients = dishRepository.getIngredients(dish.id, item.variantId).filterNot { it.deleted }
-        recipeDetail.value = RecipeDetailState(item, dish, ingredients)
+        val variants = dishRepository.getVariants(dish.id).filterNot { it.deleted }
+        recipeDetail.value = RecipeDetailState(item, dish, ingredients, variants)
     }
 
     fun closeRecipe() {

@@ -18,7 +18,7 @@ class DefaultSyncEngine @Inject constructor(
 ) : SyncEngine {
     override suspend fun apply(operation: SyncOperation): Boolean {
         return when (operation.entityType) {
-            "dish", "dish_ingredient", "dish_variant" -> dishSyncApplier.apply(operation)
+            "dish", "dish_ingredient", "dish_variant", "recipe_category", "recipe_category_link" -> dishSyncApplier.apply(operation)
             "task" -> taskSyncApplier.apply(operation)
             "person", "group" -> householdSyncApplier.apply(operation)
             "shopping_list", "shopping_product", "shopping_catalog" -> shoppingSyncApplier.apply(operation)

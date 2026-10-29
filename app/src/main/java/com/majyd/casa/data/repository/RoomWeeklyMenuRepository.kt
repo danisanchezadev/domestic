@@ -18,6 +18,7 @@ import com.majyd.casa.sync.WeeklyMenuItemSyncPayload
 import com.majyd.casa.sync.WeeklyMenuSyncPayloadCodec
 import com.majyd.casa.sync.MenuHistorySyncPayload
 import com.majyd.casa.sync.MenuHistorySyncPayloadCodec
+import com.majyd.casa.notifications.NotificationScheduler
 import java.time.LocalDate
 import java.util.UUID
 import javax.inject.Inject
@@ -35,6 +36,7 @@ class RoomWeeklyMenuRepository @Inject constructor(
     private val shoppingRepository: ShoppingRepository,
     private val deviceManager: DeviceManager,
     private val syncOperationRepository: SyncOperationRepository,
+    private val notificationScheduler: NotificationScheduler,
 ) : WeeklyMenuRepository {
 
     override fun observeItems(): Flow<List<WeeklyMenuItem>> =
@@ -91,6 +93,7 @@ class RoomWeeklyMenuRepository @Inject constructor(
                 updatedByDevice = device.deviceId,
             )
             weeklyMenuDao.upsert(entity)
+            schedulePreparation(entity)
             snapshot(entity, currentWeekStart(), device.deviceId)
             enqueue(entity, if (current == null) "CREATE" else "UPDATE", shoppingIngredientIds?.toList())
             addDishIngredientsToShopping(dishId, variantId, shoppingIngredientIds)
@@ -105,6 +108,7 @@ class RoomWeeklyMenuRepository @Inject constructor(
             val now = System.currentTimeMillis()
             val updated = current.copy(deleted = true, updatedAt = now, version = current.version + 1, updatedByDevice = device.deviceId)
             weeklyMenuDao.upsert(updated)
+            notificationScheduler.cancelPreparation(updated.id)
             enqueue(updated, "DELETE", null)
             updated.toModel()
         }
@@ -117,6 +121,7 @@ class RoomWeeklyMenuRepository @Inject constructor(
             val now = System.currentTimeMillis()
             val updated = current.copy(deleted = false, updatedAt = now, version = current.version + 1, updatedByDevice = device.deviceId)
             weeklyMenuDao.upsert(updated)
+            schedulePreparation(updated)
             enqueue(updated, "RESTORE", null)
             updated.toModel()
         }
@@ -129,6 +134,7 @@ class RoomWeeklyMenuRepository @Inject constructor(
             weeklyMenuDao.getActive().forEach { current ->
                 val updated = current.copy(deleted = true, updatedAt = now, version = current.version + 1, updatedByDevice = device.deviceId)
                 weeklyMenuDao.upsert(updated)
+                notificationScheduler.cancelPreparation(updated.id)
                 enqueue(updated, "ARCHIVE", null)
             }
         }
@@ -231,6 +237,21 @@ class RoomWeeklyMenuRepository @Inject constructor(
     private fun currentWeekStart(): Long {
         val today = LocalDate.now()
         return today.minusDays((today.dayOfWeek.value - 1).toLong()).toEpochDay()
+    }
+
+    private suspend fun schedulePreparation(item: WeeklyMenuItemEntity) {
+        val dishId = item.dishId ?: run {
+            notificationScheduler.cancelPreparation(item.id)
+            return
+        }
+        val dish = dishDao.getById(dishId)
+        if (dish == null || !dish.preparationRequired) {
+            notificationScheduler.cancelPreparation(item.id)
+            return
+        }
+        val date = LocalDate.ofEpochDay(currentWeekStart()).plusDays((item.dayOfWeek - 1).toLong())
+        val slot = runCatching { MealSlot.valueOf(item.mealSlot) }.getOrDefault(MealSlot.LUNCH)
+        notificationScheduler.schedulePreparation(item.id, dish.name, date, slot)
     }
 
     private fun WeeklyMenuItemEntity.toModel(): WeeklyMenuItem = WeeklyMenuItem(

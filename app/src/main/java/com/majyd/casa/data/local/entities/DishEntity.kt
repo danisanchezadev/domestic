@@ -9,6 +9,7 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["householdId"]),
         Index(value = ["normalizedName"]),
+        Index(value = ["collection"]),
     ],
 )
 data class DishEntity(
@@ -29,4 +30,6 @@ data class DishEntity(
     val updatedAt: Long,
     val version: Long,
     val updatedByDevice: String,
+    val collection: String = "MENU",
+    val preparationRequired: Boolean = false,
 )

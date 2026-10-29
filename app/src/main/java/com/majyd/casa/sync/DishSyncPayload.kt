@@ -22,6 +22,8 @@ data class DishSyncPayload(
     val updatedAt: Long,
     val version: Long,
     val updatedByDevice: String,
+    val collection: String = "MENU",
+    val preparationRequired: Boolean = false,
 )
 
 @Serializable
@@ -58,6 +60,29 @@ data class DishVariantSyncPayload(
     val updatedByDevice: String,
 )
 
+@Serializable
+data class RecipeCategorySyncPayload(
+    val id: String,
+    val householdId: String,
+    val name: String,
+    val normalizedName: String,
+    val deleted: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val version: Long,
+    val updatedByDevice: String,
+)
+
+@Serializable
+data class RecipeCategoryLinkSyncPayload(
+    val dishId: String,
+    val categoryId: String,
+    val deleted: Boolean,
+    val updatedAt: Long,
+    val version: Long,
+    val updatedByDevice: String,
+)
+
 object DishSyncPayloadCodec {
     private val json = Json { ignoreUnknownKeys = true }
     fun encodeDish(value: DishSyncPayload): String = json.encodeToString(value)
@@ -66,4 +91,8 @@ object DishSyncPayloadCodec {
     fun decodeIngredient(value: String): DishIngredientSyncPayload? = runCatching { json.decodeFromString<DishIngredientSyncPayload>(value) }.getOrNull()
     fun encodeVariant(value: DishVariantSyncPayload): String = json.encodeToString(value)
     fun decodeVariant(value: String): DishVariantSyncPayload? = runCatching { json.decodeFromString<DishVariantSyncPayload>(value) }.getOrNull()
+    fun encodeCategory(value: RecipeCategorySyncPayload): String = json.encodeToString(value)
+    fun decodeCategory(value: String): RecipeCategorySyncPayload? = runCatching { json.decodeFromString<RecipeCategorySyncPayload>(value) }.getOrNull()
+    fun encodeCategoryLink(value: RecipeCategoryLinkSyncPayload): String = json.encodeToString(value)
+    fun decodeCategoryLink(value: String): RecipeCategoryLinkSyncPayload? = runCatching { json.decodeFromString<RecipeCategoryLinkSyncPayload>(value) }.getOrNull()
 }

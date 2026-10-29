@@ -144,6 +144,7 @@ private fun summaryFor(destination: AppDestination, summary: HomeSummaryState): 
         AppDestination.Calendar -> "${summary.upcomingEvents} proximos eventos"
         AppDestination.WeeklyMenu -> summary.todayMenu?.let { "Hoy: $it" } ?: "Sin menu para hoy"
         AppDestination.Dishes -> "Catalogo de platos"
+        AppDestination.RecipeBook -> "Catalogo de recetas"
         AppDestination.Plans -> "Sin planes guardados"
         AppDestination.Trips -> "Sin viajes en preparacion"
         AppDestination.Home -> "Resumen del hogar"

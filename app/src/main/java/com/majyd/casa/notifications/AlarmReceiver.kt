@@ -19,8 +19,14 @@ class AlarmReceiver : BroadcastReceiver() {
         ) return
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(if (kind == "vencimiento") "Tarea vencida" else "Recordatorio de tarea")
-            .setContentText(title)
+            .setContentTitle(
+                when (kind) {
+                    "preparacion" -> "Preparación previa"
+                    "vencimiento" -> "Tarea vencida"
+                    else -> "Recordatorio de tarea"
+                },
+            )
+            .setContentText(if (kind == "preparacion") "El plato $title necesita que prepares algo para hacerlo" else title)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()

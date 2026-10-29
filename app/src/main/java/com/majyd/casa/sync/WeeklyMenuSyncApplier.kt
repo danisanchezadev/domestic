@@ -4,6 +4,9 @@ import androidx.room.withTransaction
 import com.majyd.casa.data.local.database.CasaDatabase
 import com.majyd.casa.data.local.entities.WeeklyMenuItemEntity
 import com.majyd.casa.data.repository.ShoppingRepository
+import com.majyd.casa.notifications.NotificationScheduler
+import com.majyd.casa.data.model.MealSlot
+import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -12,6 +15,7 @@ class WeeklyMenuSyncApplier @Inject constructor(
     private val database: CasaDatabase,
     private val operationRepository: SyncOperationRepository,
     private val shoppingRepository: ShoppingRepository,
+    private val notificationScheduler: NotificationScheduler,
 ) {
     private val conflictResolver = DeterministicConflictResolver()
 
@@ -32,6 +36,17 @@ class WeeklyMenuSyncApplier @Inject constructor(
             // The menu assignment is also the trigger for the shopping ingredients on the peer device.
             val dish = database.dishDao().getById(payload.dishId)
             dish?.let {
+                if (it.preparationRequired) {
+                    val weekStart = LocalDate.now().minusDays((LocalDate.now().dayOfWeek.value - 1).toLong()).toEpochDay()
+                    notificationScheduler.schedulePreparation(
+                        payload.id,
+                        it.name,
+                        LocalDate.ofEpochDay(weekStart).plusDays((payload.dayOfWeek - 1).toLong()),
+                        runCatching { MealSlot.valueOf(payload.mealSlot) }.getOrDefault(MealSlot.LUNCH),
+                    )
+                } else {
+                    notificationScheduler.cancelPreparation(payload.id)
+                }
                 database.dishDao().getIngredients(it.id, payload.variantId)
                     .filterNot { ingredient -> ingredient.deleted }
                     .forEach { ingredient ->
@@ -40,6 +55,9 @@ class WeeklyMenuSyncApplier @Inject constructor(
                         }
                     }
             }
+        }
+        if (appliedToLocal && (payload.deleted || payload.dishId == null)) {
+            notificationScheduler.cancelPreparation(payload.id)
         }
         // Record only after the menu and its shopping side effects have succeeded so a failed
         // ingredient import remains retryable.

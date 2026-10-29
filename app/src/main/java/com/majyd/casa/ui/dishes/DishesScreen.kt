@@ -11,16 +11,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -37,19 +42,29 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -57,6 +72,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -64,15 +80,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
@@ -80,52 +100,126 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.majyd.casa.data.model.Dish
 import com.majyd.casa.data.model.DishMealType
+import com.majyd.casa.data.model.DishCollection
+import com.majyd.casa.ui.components.RecipeCard
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+
+@Composable
+private fun EditorSectionLabel(
+    text: String,
+    large: Boolean = false,
+    filled: Boolean = true,
+) {
+    val hasBackground = large || filled
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (hasBackground) {
+                    Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f), RoundedCornerShape(10.dp))
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 10.dp, vertical = if (large) 8.dp else 5.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text,
+            color = if (hasBackground) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+            style = if (large) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+        )
+    }
+}
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DishesScreen(
     onBack: () -> Unit,
+    collection: DishCollection = DishCollection.MENU,
     viewModel: DishesViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(collection) { viewModel.setCollection(collection) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var dishToDelete by remember { mutableStateOf<Dish?>(null) }
+    var categoriesOpen by remember { mutableStateOf(false) }
+    var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    val visibleDishes = state.dishes.filter { dish ->
+        selectedCategory == null || dish.category.split(',').any { it.trim().equals(selectedCategory, ignoreCase = true) }
+    }
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Volver") } },
-                title = { Text("Catalogo de platos") },
+                title = { Text(if (collection == DishCollection.RECIPE_BOOK) "Recetario" else "Catalogo de platos") },
                 actions = {
                     androidx.compose.material3.TextButton(onClick = viewModel::openNew) {
                         Icon(Icons.Filled.Add, contentDescription = null)
-                        Text("Nuevo plato")
+                        Text(if (collection == DishCollection.RECIPE_BOOK) "Nueva receta" else "Nuevo plato")
                     }
                 },
             )
         },
     ) { padding ->
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.padding(padding).padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+        Box(Modifier.fillMaxSize()) {
+            Image(
+                painter = painterResource(com.majyd.casa.R.drawable.kitchen_background),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+            if (collection == DishCollection.RECIPE_BOOK) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Button(
+                        onClick = { categoriesOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(selectedCategory?.let { "Categoría: $it" } ?: "Categorías") }
+                }
+            }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 OutlinedTextField(
                     value = state.query,
                     onValueChange = viewModel::updateQuery,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Buscar plato") },
+                    label = { Text("Buscar en tus platos") },
+                    placeholder = { Text("Nombre del plato") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    shape = RoundedCornerShape(18.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFFFFF9EE),
+                        unfocusedContainerColor = Color(0xFFFFF9EE),
+                        focusedBorderColor = Color(0xFF557A5D),
+                        unfocusedBorderColor = Color(0xFFC99C76),
+                    ),
                     singleLine = true,
                 )
             }
-            if (state.dishes.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text("Todavia no hay platos guardados.") }
-            state.dishes.groupBy { it.category.ifBlank { "Sin categoria" } }
+            if (visibleDishes.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    if (state.dishes.isEmpty()) "Todavía no hay platos guardados." else "No hay platos en esta categoría.",
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+            visibleDishes.flatMap { dish ->
+                dish.category.split(',').map { it.trim() }.filter { it.isNotBlank() }.ifEmpty { listOf("Sin categoria") }.map { category -> category to dish }
+            }.groupBy({ it.first }, { it.second })
                 .toSortedMap(String.CASE_INSENSITIVE_ORDER)
                 .forEach { (category, categoryDishes) ->
-                    item(span = { GridItemSpan(maxLineSpan) }) { Text(category, style = MaterialTheme.typography.titleLarge) }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(category, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleLarge)
+                    }
                     gridItems(categoryDishes.sortedBy { it.name.lowercase() }, key = { it.id }) { dish ->
                         DishCard(
                             dish,
@@ -135,11 +229,12 @@ fun DishesScreen(
                         )
                     }
                 }
+            }
         }
     }
-    if (state.editorOpen) DishEditorSimple(state.draft, viewModel)
+    if (state.editorOpen) DishEditorSimple(state.draft, state.categories, collection, viewModel)
     state.detail?.let { detail ->
-        DishDetailDialog(
+        DishDetailScreen(
             detail = detail,
             onDismiss = viewModel::closeDetail,
             onEdit = { viewModel.edit(detail.dish); viewModel.closeDetail() },
@@ -155,6 +250,58 @@ fun DishesScreen(
             dismissButton = { TextButton(onClick = { dishToDelete = null }) { Text("Cancelar") } },
         )
     }
+    if (categoriesOpen && collection == DishCollection.RECIPE_BOOK) {
+        RecipeCategoryDialog(
+            categories = state.categories,
+            onSave = viewModel::saveCategory,
+            onRename = viewModel::renameCategory,
+            onDelete = viewModel::deleteCategory,
+            onSelect = { selectedCategory = it; categoriesOpen = false },
+            onDismiss = { categoriesOpen = false },
+        )
+    }
+}
+
+@Composable
+private fun RecipeCategoryDialog(
+    categories: List<com.majyd.casa.data.model.RecipeCategory>,
+    onSave: (String) -> Unit,
+    onRename: (com.majyd.casa.data.model.RecipeCategory, String) -> Unit,
+    onDelete: (com.majyd.casa.data.model.RecipeCategory) -> Unit,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var editing by remember { mutableStateOf<com.majyd.casa.data.model.RecipeCategory?>(null) }
+    var name by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Categorias del recetario") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextButton(onClick = { onSelect(null) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Mostrar todas")
+                }
+                categories.forEach { category ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            category.name,
+                            Modifier.weight(1f).clickable { onSelect(category.name) },
+                        )
+                        TextButton(onClick = { editing = category; name = category.name }) { Text("Editar") }
+                        IconButton(onClick = { onDelete(category) }) { Icon(Icons.Filled.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) }
+                    }
+                }
+                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(if (editing == null) "Nueva categoria" else "Renombrar categoria") }, singleLine = true)
+                Button(onClick = { if (editing == null) onSave(name) else editing?.let { onRename(it, name) }; editing = null; name = "" }, enabled = name.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                    Text(if (editing == null) "Añadir" else "Guardar")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+    )
 }
 
 @Composable
@@ -164,27 +311,67 @@ private fun DishCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
-        border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary),
+    RecipeCard(
+        dish = dish,
+        onOpen = onOpen,
+        onEdit = onEdit,
+        onDelete = onDelete,
+    )
+}
+
+@Composable
+private fun DishDetailScreen(
+    detail: DishDetail,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val image = detail.dish.imageBase64?.let(::decodeImage)
+    val steps = detail.dish.recipeSteps.lines().filter { it.isNotBlank() }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            val imageModifier = Modifier.fillMaxWidth().size(90.dp)
-            val image = dish.imageBase64?.let(::decodeImage)
-            if (image != null) {
-                Image(image.asImageBitmap(), "Imagen de ${dish.name}", imageModifier, contentScale = ContentScale.Crop)
-            } else {
-                androidx.compose.foundation.layout.Box(
-                    modifier = imageModifier,
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp))) {
+            Image(
+                painter = painterResource(com.majyd.casa.R.drawable.kitchen_background),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)).padding(12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Filled.Restaurant, contentDescription = "Sin imagen", tint = MaterialTheme.colorScheme.primary)
+                    Text(detail.dish.name, color = MaterialTheme.colorScheme.onPrimary, textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 }
-            }
-            Text(dish.name, style = MaterialTheme.typography.titleMedium, maxLines = 2)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Editar", tint = MaterialTheme.colorScheme.primary) }
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) }
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    item {
+                        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFFFFF9EE).copy(alpha = 0.96f)).border(BorderStroke(1.dp, Color(0xFFC99C76)), RoundedCornerShape(16.dp))) {
+                            if (image != null) {
+                                Image(image.asImageBitmap(), detail.dish.name, Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+                            } else {
+                                Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Filled.Restaurant, "Sin imagen", tint = Color(0xFF24352F), modifier = Modifier.size(48.dp))
+                                }
+                            }
+                        }
+                    }
+                    item { DishDetailSection("Ingredientes") { if (detail.ingredients.isEmpty()) Text("Sin ingredientes") else detail.ingredients.forEach { Text("- ${ingredientLabel(it)}") } } }
+                    item { DishDetailSection("Pasos") { if (steps.isEmpty()) Text("Sin pasos indicados") else steps.forEachIndexed { index, step -> Text("${index + 1}. $step") } } }
+                    if (detail.variants.isNotEmpty()) item { DishDetailSection("Variantes") { detail.variants.forEach { variant -> Text(variant.name); variant.recipe.takeIf { it.isNotBlank() }?.let { Text(it) }; variant.notes.takeIf { it.isNotBlank() }?.let { Text(it) } } } }
+                    item { DishDetailSection("Tiempo") { Text(detail.dish.preparationMinutes?.let { "$it min" } ?: "No indicado") } }
+                    item { DishDetailSection("Raciones") { Text(detail.dish.servings?.let { "$it raciones" } ?: "No indicadas") } }
+                }
+                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), RoundedCornerShape(14.dp)).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = onEdit, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) { Text("Editar") }
+                    Button(onClick = onDelete, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Eliminar") }
+                    Button(onClick = onDismiss, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { Text("Cerrar") }
+                }
             }
         }
     }
@@ -197,57 +384,165 @@ private fun DishDetailDialog(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val image = detail.dish.imageBase64?.let(::decodeImage)
+    val steps = detail.dish.recipeSteps.lines().filter { it.isNotBlank() }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(detail.dish.name) },
-        text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                detail.dish.imageBase64?.let { value ->
-                    item {
-                        decodeImage(value)?.let { bitmap ->
-                            Image(bitmap.asImageBitmap(), detail.dish.name, Modifier.fillMaxWidth(), contentScale = ContentScale.Crop)
-                        }
-                    }
-                }
-                if (detail.dish.category.isNotBlank()) item { Text("Categoría: ${detail.dish.category}") }
-                if (detail.dish.recipe.isNotBlank()) item { Text(detail.dish.recipe) }
-                if (detail.dish.recipeSteps.isNotBlank()) {
-                    item { Text("Pasos", style = MaterialTheme.typography.titleSmall) }
-                    item { Text(detail.dish.recipeSteps) }
-                }
-                if (detail.dish.preparationMinutes != null || detail.dish.servings != null) {
-                    item {
-                        Text(
-                            listOfNotNull(
-                                detail.dish.preparationMinutes?.let { "${it} min" },
-                                detail.dish.servings?.let { "${it} raciones" },
-                            ).joinToString("  | "),
-                        )
-                    }
-                }
-                if (detail.dish.notes.isNotBlank()) item { Text(detail.dish.notes) }
-                if (detail.ingredients.isNotEmpty()) {
-                    item { Text("Ingredientes", style = MaterialTheme.typography.titleSmall) }
-                    items(detail.ingredients) { ingredient -> Text("- ${ingredientLabel(ingredient)}") }
-                }
-                detail.variants.forEach { variant ->
-                    item { Text("Variante: ${variant.name}", style = MaterialTheme.typography.titleSmall) }
-                    if (variant.recipe.isNotBlank()) item { Text(variant.recipe) }
-                    variant.ingredients.forEach { ingredient ->
-                        item { Text("- ${ingredientLabel(ingredient)}") }
-                    }
-                }
-                item { Text("Asignado ${detail.usageStats.assignmentCount} veces", style = MaterialTheme.typography.bodySmall) }
+        containerColor = Color.Transparent,
+        title = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = detail.dish.name,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                )
             }
         },
-        confirmButton = { TextButton(onClick = onEdit) { Text("Editar") } },
+        text = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp)),
+            ) {
+                Image(
+                    painter = painterResource(com.majyd.casa.R.drawable.kitchen_background),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                LazyColumn(
+                    modifier = Modifier.padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFFFF9EE)),
+                        ) {
+                            if (image != null) {
+                                Image(
+                                    bitmap = image.asImageBitmap(),
+                                    contentDescription = detail.dish.name,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(190.dp)
+                                        .clip(RoundedCornerShape(16.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else {
+                                androidx.compose.foundation.layout.Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(150.dp)
+                                        .clip(RoundedCornerShape(16.dp)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Restaurant,
+                                        contentDescription = "Sin imagen",
+                                        tint = Color(0xFF24352F),
+                                        modifier = Modifier.size(42.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (detail.ingredients.isNotEmpty()) {
+                        item {
+                            DishDetailSection("Ingredientes") {
+                                detail.ingredients.forEach { ingredient ->
+                                    Text("- ${ingredientLabel(ingredient)}")
+                                }
+                            }
+                        }
+                    } else {
+                        item { DishDetailSection("Ingredientes") { Text("Sin ingredientes") } }
+                    }
+                    item {
+                        DishDetailSection("Pasos") {
+                            if (steps.isEmpty()) {
+                                Text("Sin pasos indicados")
+                            } else {
+                                steps.forEachIndexed { index, step -> Text("${index + 1}. $step") }
+                            }
+                        }
+                    }
+                    if (detail.variants.isNotEmpty()) {
+                        item {
+                            DishDetailSection("Variantes") {
+                                detail.variants.forEach { variant ->
+                                    Text(variant.name)
+                                    variant.recipe.takeIf { it.isNotBlank() }?.let { Text(it) }
+                                    variant.notes.takeIf { it.isNotBlank() }?.let { Text(it) }
+                                }
+                            }
+                        }
+                    }
+                    item { DishDetailSection("Tiempo") { Text(detail.dish.preparationMinutes?.let { "$it min" } ?: "No indicado") } }
+                    item { DishDetailSection("Raciones") { Text(detail.dish.servings?.let { "$it raciones" } ?: "No indicadas") } }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onEdit,
+                colors = ButtonDefaults.textButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+                shape = RoundedCornerShape(10.dp),
+            ) { Text("Editar") }
+        },
         dismissButton = {
-            Row {
-                TextButton(onClick = onDelete) { Text("Eliminar") }
-                TextButton(onClick = onDismiss) { Text("Cerrar") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.textButtonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                ) { Text("Eliminar") }
+                TextButton(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.textButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                ) { Text("Cerrar") }
             }
         },
     )
+}
+
+@Composable
+private fun DishDetailSection(title: String, content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFF9EE).copy(alpha = 0.96f), RoundedCornerShape(14.dp))
+                .border(BorderStroke(1.dp, Color(0xFFC99C76)), RoundedCornerShape(14.dp))
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = Color(0xFF24352F))
+            content()
+        }
+    }
 }
 
 private fun ingredientLabel(ingredient: DraftIngredient): String =
@@ -255,12 +550,19 @@ private fun ingredientLabel(ingredient: DraftIngredient): String =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DishEditorSimple(draft: DishDraft, viewModel: DishesViewModel) {
+private fun DishEditorSimple(
+    draft: DishDraft,
+    categories: List<com.majyd.casa.data.model.RecipeCategory>,
+    collection: DishCollection,
+    viewModel: DishesViewModel,
+) {
     val context = LocalContext.current
     var sourceDialogOpen by rememberSaveable { mutableStateOf(false) }
     var cameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var pendingBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var cropDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var categoryMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    var variantText by rememberSaveable(draft.dishId) { mutableStateOf("") }
     fun prepareImage(input: java.io.InputStream) {
         decodeOriented(input)?.let {
             pendingBitmap = it
@@ -286,14 +588,33 @@ private fun DishEditorSimple(draft: DishDraft, viewModel: DishesViewModel) {
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) openCamera()
     }
-    AlertDialog(
+    Dialog(
         onDismissRequest = viewModel::closeEditor,
-        title = { Text(if (draft.dishId == null) "Nuevo plato" else "Editar plato") },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                EditorSectionLabel(if (draft.dishId == null) "Nuevo plato" else "Editar plato", large = true)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp)),
+                ) {
+                    Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .background(Color(0xFFFFF9EE), RoundedCornerShape(14.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                 OutlinedTextField(
                     value = draft.name,
                     onValueChange = viewModel::updateName,
@@ -301,43 +622,109 @@ private fun DishEditorSimple(draft: DishDraft, viewModel: DishesViewModel) {
                     label = { Text("Nombre del plato") },
                     singleLine = true,
                 )
-                OutlinedTextField(
+                if (collection == DishCollection.RECIPE_BOOK) {
+                    ExposedDropdownMenuBox(
+                        expanded = categoryMenuExpanded,
+                        onExpandedChange = { categoryMenuExpanded = !categoryMenuExpanded },
+                    ) {
+                        val selectedCategoryNames = categories
+                            .filter { it.id in draft.categoryIds }
+                            .joinToString(", ") { it.name }
+                        OutlinedTextField(
+                            value = selectedCategoryNames,
+                            onValueChange = {},
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            label = { Text("Categorías") },
+                            placeholder = { Text("Selecciona una o varias") },
+                            readOnly = true,
+                            singleLine = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded) },
+                        )
+                        ExposedDropdownMenu(
+                            expanded = categoryMenuExpanded,
+                            onDismissRequest = { categoryMenuExpanded = false },
+                        ) {
+                            categories.forEach { category ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(if (category.id in draft.categoryIds) "[x] ${category.name}" else category.name) },
+                                    onClick = {
+                                        viewModel.toggleCategory(category.id)
+                                        categoryMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                if (collection == DishCollection.MENU) OutlinedTextField(
                     value = draft.category,
                     onValueChange = viewModel::updateCategory,
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Categoría") },
                     singleLine = true,
                 )
-                Text("Foto (opcional)", style = MaterialTheme.typography.titleMedium)
+                EditorSectionLabel("Foto (opcional)", filled = false)
                 draft.imageBase64?.let { value ->
                     decodeImage(value)?.let { bitmap ->
                         Image(bitmap.asImageBitmap(), "Vista previa", Modifier.fillMaxWidth().size(160.dp), contentScale = ContentScale.Crop)
                     }
                     TextButton(onClick = { viewModel.updateImage(null) }) { Text("Quitar foto") }
                 }
-                Button(onClick = { sourceDialogOpen = true }) {
+                Button(
+                    onClick = { sourceDialogOpen = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                ) {
                     Icon(Icons.Filled.CameraAlt, contentDescription = null)
                     Text("Elegir foto")
                 }
-                Text("Receta (opcional)", style = MaterialTheme.typography.titleMedium)
-                Text("Ingredientes", style = MaterialTheme.typography.labelLarge)
+                EditorSectionLabel("Receta (opcional)", filled = false)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = draft.preparationRequired,
+                        onCheckedChange = viewModel::updatePreparationRequired,
+                    )
+                    Text("Preparación previa")
+                }
+                EditorSectionLabel("Ingredientes", filled = false)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     var ingredientName by rememberSaveable { mutableStateOf("") }
                     var ingredientQuantity by rememberSaveable { mutableStateOf("") }
                     var ingredientUnit by rememberSaveable { mutableStateOf("") }
+                    fun normalizeQuantity(value: String, unit: String): String =
+                        if (unit == "g" || unit == "ml") value.filter(Char::isDigit) else value
                     OutlinedTextField(ingredientName, { ingredientName = it }, Modifier.fillMaxWidth(), label = { Text("Ingrediente") }, singleLine = true)
-                    OutlinedTextField(ingredientQuantity, { ingredientQuantity = it }, Modifier.fillMaxWidth(), label = { Text("Cantidad") }, singleLine = true)
+                    OutlinedTextField(
+                        value = ingredientQuantity,
+                        onValueChange = { ingredientQuantity = normalizeQuantity(it, ingredientUnit) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Cantidad") },
+                        singleLine = true,
+                    )
                     Text("Unidad", style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         listOf("g", "ml", "porción", "gotas").forEach { unit ->
                             FilterChip(
                                 selected = ingredientUnit == unit,
-                                onClick = { ingredientUnit = unit },
+                                onClick = {
+                                    ingredientUnit = unit
+                                    ingredientQuantity = normalizeQuantity(ingredientQuantity, unit)
+                                },
+                                modifier = Modifier.weight(1f),
                                 label = { Text(unit) },
                             )
                         }
                     }
-                    Button(onClick = {
+                    Button(
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                        ),
+                        onClick = {
                         viewModel.addIngredient(ingredientName, ingredientQuantity, ingredientUnit)
                         ingredientName = ""
                         ingredientQuantity = ""
@@ -352,13 +739,40 @@ private fun DishEditorSimple(draft: DishDraft, viewModel: DishesViewModel) {
                         }
                     }
                 }
-                Text("Pasos de preparacion (opcional)", style = MaterialTheme.typography.titleMedium)
+                EditorSectionLabel("Pasos de preparacion (opcional)", filled = false)
+                var editingStepIndex by rememberSaveable(draft.dishId) { mutableStateOf<Int?>(null) }
+                var editingStepText by rememberSaveable(draft.dishId) { mutableStateOf("") }
                 var stepText by rememberSaveable(draft.dishId) { mutableStateOf("") }
                 draft.steps.forEachIndexed { index, step ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Paso ${index + 1}: $step", Modifier.weight(1f))
-                        IconButton(onClick = { viewModel.removeStep(index) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Eliminar paso")
+                    if (editingStepIndex == index) {
+                        OutlinedTextField(
+                            value = editingStepText,
+                            onValueChange = { editingStepText = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Paso ${index + 1}") },
+                            minLines = 2,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = {
+                                    viewModel.updateStep(index, editingStepText)
+                                    editingStepIndex = null
+                                },
+                            ) { Text("Guardar") }
+                            TextButton(onClick = { editingStepIndex = null }) { Text("Cancelar") }
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Paso ${index + 1}: $step", Modifier.weight(1f))
+                            IconButton(onClick = {
+                                editingStepIndex = index
+                                editingStepText = step
+                            }) {
+                                Icon(Icons.Filled.Edit, contentDescription = "Editar paso")
+                            }
+                            IconButton(onClick = { viewModel.removeStep(index) }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Eliminar paso")
+                            }
                         }
                     }
                 }
@@ -371,7 +785,36 @@ private fun DishEditorSimple(draft: DishDraft, viewModel: DishesViewModel) {
                 Button(
                     onClick = { viewModel.addStep(stepText); stepText = "" },
                     enabled = stepText.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                        disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                    ),
                 ) { Text("Agregar paso") }
+                EditorSectionLabel("Variantes (opcional)")
+                OutlinedTextField(
+                    value = variantText,
+                    onValueChange = { variantText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Describe la variante") },
+                    minLines = 2,
+                )
+                Button(
+                    onClick = {
+                        viewModel.addVariant(variantText, "", "")
+                        variantText = ""
+                    },
+                    enabled = variantText.isNotBlank(),
+                ) { Text("Agregar variante") }
+                draft.variants.forEachIndexed { index, variant ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(variant.name, Modifier.weight(1f))
+                        IconButton(onClick = { viewModel.removeVariant(index) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Eliminar variante")
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Tiempo aproximado:")
                     OutlinedTextField(
@@ -399,10 +842,39 @@ private fun DishEditorSimple(draft: DishDraft, viewModel: DishesViewModel) {
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = viewModel::save, enabled = draft.name.isNotBlank() && draft.category.isNotBlank()) { Text("Guardar") } },
-        dismissButton = { TextButton(onClick = viewModel::closeEditor) { Text("Cancelar") } },
-    )
+                }
+                val hasRequiredCategory = if (collection == DishCollection.RECIPE_BOOK) {
+                    draft.categoryIds.isNotEmpty()
+                } else {
+                    draft.category.isNotBlank()
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = viewModel::closeEditor,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary),
+                    ) { Text("Cancelar") }
+                    Button(
+                        onClick = viewModel::save,
+                        modifier = Modifier.weight(1f),
+                        enabled = draft.name.isNotBlank() && hasRequiredCategory,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    ) { Text("Guardar") }
+                }
+            }
+        }
+    }
     if (sourceDialogOpen) {
         AlertDialog(
             onDismissRequest = { sourceDialogOpen = false },

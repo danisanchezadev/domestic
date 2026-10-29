@@ -9,7 +9,10 @@ import androidx.core.app.NotificationManagerCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.majyd.casa.R
 import com.majyd.casa.data.model.TaskItem
+import com.majyd.casa.data.model.MealSlot
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -52,12 +55,34 @@ class AndroidNotificationScheduler @Inject constructor(
         }
     }
 
+    override fun schedulePreparation(menuItemId: String, dishName: String, date: LocalDate, mealSlot: MealSlot) {
+        cancelPreparation(menuItemId)
+        val preparationDate = date.minusDays(1)
+        val triggerAt = LocalDateTime.of(preparationDate, LocalTime.of(15, 0))
+            .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        if (triggerAt <= System.currentTimeMillis()) return
+        setAlarm(menuItemId, triggerAt, "preparacion", dishName)
+    }
+
+    override fun cancelPreparation(menuItemId: String) {
+        alarmManager.cancel(pendingIntent(menuItemId, 2))
+    }
+
     private fun setAlarm(task: TaskItem, triggerAt: Long, kind: String, kindId: Int) {
         if (triggerAt <= System.currentTimeMillis()) return
         alarmManager.setAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
             triggerAt,
             pendingIntent(task.id, kindId, task.title, kind),
+        )
+    }
+
+    private fun setAlarm(id: String, triggerAt: Long, kind: String, title: String) {
+        if (triggerAt <= System.currentTimeMillis()) return
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP,
+            triggerAt,
+            pendingIntent(id, 2, title, kind),
         )
     }
 

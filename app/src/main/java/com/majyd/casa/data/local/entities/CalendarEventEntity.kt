@@ -28,4 +28,10 @@ data class CalendarEventEntity(
     val updatedAt: Long,
     val version: Long,
     val updatedByDevice: String,
+    val participantIdsJson: String = "[]",
+    val recurrenceType: String = "NONE",
+    val recurrenceInterval: Int = 1,
+    val recurrenceWeekdays: String = "",
+    val recurrenceUntil: Long? = null,
+    val recurrenceCustomUnit: String = "DAYS",
 )

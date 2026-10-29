@@ -8,6 +8,7 @@ enum class DashboardCard {
     TASKS,
     CALENDAR,
     WEEKLY_MENU,
+    RECIPE_BOOK,
     PLANS,
     TRIPS,
     HOME,

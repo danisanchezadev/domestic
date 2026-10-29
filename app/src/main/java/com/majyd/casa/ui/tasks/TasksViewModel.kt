@@ -261,6 +261,7 @@ class TasksViewModel @Inject constructor(
         val current = draft.value
         if (Normalizer.normalizeText(current.title).isBlank()) return@launch
         val dueDate = TaskInputFormatters.parseDate(current.dueDate)?.toEpochDay() ?: return@launch
+        if (current.taskId == null && dueDate < LocalDate.now().toEpochDay()) return@launch
         val dueTime = current.dueTime.takeIf { it.isNotBlank() }?.let {
             runCatching { LocalTime.parse(it).let { time -> time.hour * 60 + time.minute } }.getOrNull()
         }

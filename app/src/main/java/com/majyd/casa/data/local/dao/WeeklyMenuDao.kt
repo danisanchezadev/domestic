@@ -26,6 +26,9 @@ interface WeeklyMenuDao {
     @Query("SELECT * FROM weekly_menu_items WHERE deleted = 0")
     suspend fun getActive(): List<WeeklyMenuItemEntity>
 
+    @Query("SELECT * FROM weekly_menu_items WHERE dishId = :dishId AND deleted = 0")
+    suspend fun getActiveByDish(dishId: String): List<WeeklyMenuItemEntity>
+
     @Upsert
     suspend fun upsert(item: WeeklyMenuItemEntity)
 

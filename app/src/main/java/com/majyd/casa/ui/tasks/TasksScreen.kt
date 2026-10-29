@@ -292,7 +292,11 @@ private fun TaskDraftCard(
                 label = { Text("Notas") },
             )
             Text("Fecha límite *", style = MaterialTheme.typography.titleSmall)
-            TaskDateWheelPicker(value = draft.dueDate, onValueChange = onDueDateChange)
+            TaskDateWheelPicker(
+                value = draft.dueDate,
+                onValueChange = onDueDateChange,
+                allowPast = draft.taskId != null,
+            )
             Text(
                 "Selecciona día, mes y año. Fecha elegida: ${draft.dueDate}",
                 style = MaterialTheme.typography.bodySmall,
@@ -373,10 +377,21 @@ private fun assignmentLabel(type: TaskAssignmentType): String = when (type) {
 }
 
 @Composable
-private fun TaskDateWheelPicker(value: String, onValueChange: (String) -> Unit) {
+private fun TaskDateWheelPicker(
+    value: String,
+    onValueChange: (String) -> Unit,
+    allowPast: Boolean,
+) {
     val today = LocalDate.now()
-    val selectedDate = TaskInputFormatters.parseDate(value) ?: today
-    val yearRange = 2020..2100
+    val parsedDate = TaskInputFormatters.parseDate(value) ?: today
+    val selectedDate = if (!allowPast && parsedDate.isBefore(today)) today else parsedDate
+    val yearRange = if (allowPast) 2020..2100 else today.year..2100
+    val monthRange = if (!allowPast && selectedDate.year == today.year) today.monthValue..12 else 1..12
+    val dayRange = if (!allowPast && selectedDate.year == today.year && selectedDate.monthValue == today.monthValue) {
+        today.dayOfMonth..selectedDate.lengthOfMonth()
+    } else {
+        1..selectedDate.lengthOfMonth()
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -385,18 +400,19 @@ private fun TaskDateWheelPicker(value: String, onValueChange: (String) -> Unit) 
     ) {
         DateWheel(
             label = "Día",
-            range = 1..selectedDate.lengthOfMonth(),
-            selected = selectedDate.dayOfMonth,
+            range = dayRange,
+            selected = selectedDate.dayOfMonth.coerceIn(dayRange.first, dayRange.last),
             onSelected = { day ->
                 onValueChange(TaskInputFormatters.formatDate(LocalDate.of(selectedDate.year, selectedDate.monthValue, day)))
             },
         )
         DateWheel(
             label = "Mes",
-            range = 1..12,
-            selected = selectedDate.monthValue,
+            range = monthRange,
+            selected = selectedDate.monthValue.coerceIn(monthRange.first, monthRange.last),
             onSelected = { month ->
-                val day = minOf(selectedDate.dayOfMonth, LocalDate.of(selectedDate.year, month, 1).lengthOfMonth())
+                val minimumDay = if (!allowPast && selectedDate.year == today.year && month == today.monthValue) today.dayOfMonth else 1
+                val day = minOf(selectedDate.dayOfMonth.coerceAtLeast(minimumDay), LocalDate.of(selectedDate.year, month, 1).lengthOfMonth())
                 onValueChange(TaskInputFormatters.formatDate(LocalDate.of(selectedDate.year, month, day)))
             },
         )
@@ -405,8 +421,10 @@ private fun TaskDateWheelPicker(value: String, onValueChange: (String) -> Unit) 
             range = yearRange,
             selected = selectedDate.year.coerceIn(yearRange.first, yearRange.last),
             onSelected = { year ->
-                val day = minOf(selectedDate.dayOfMonth, LocalDate.of(year, selectedDate.monthValue, 1).lengthOfMonth())
-                onValueChange(TaskInputFormatters.formatDate(LocalDate.of(year, selectedDate.monthValue, day)))
+                val month = if (!allowPast && year == today.year) selectedDate.monthValue.coerceAtLeast(today.monthValue) else selectedDate.monthValue
+                val minimumDay = if (!allowPast && year == today.year && month == today.monthValue) today.dayOfMonth else 1
+                val day = minOf(selectedDate.dayOfMonth.coerceAtLeast(minimumDay), LocalDate.of(year, month, 1).lengthOfMonth())
+                onValueChange(TaskInputFormatters.formatDate(LocalDate.of(year, month, day)))
             },
         )
     }

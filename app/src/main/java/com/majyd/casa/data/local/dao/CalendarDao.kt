@@ -17,6 +17,9 @@ interface CalendarDao {
     @Query("SELECT * FROM calendar_events WHERE deleted = 0")
     suspend fun getActive(): List<CalendarEventEntity>
 
+    @Query("SELECT * FROM calendar_events WHERE deleted = 0 AND startAt < :endExclusive AND (recurrenceUntil IS NULL OR recurrenceUntil >= :startInclusive)")
+    suspend fun getEventsIntersecting(startInclusive: Long, endExclusive: Long): List<CalendarEventEntity>
+
     @Upsert
     suspend fun upsert(event: CalendarEventEntity)
 

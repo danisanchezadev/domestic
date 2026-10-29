@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.majyd.casa.data.local.database.CasaDatabase
 import com.majyd.casa.data.model.CalendarEventItem
+import com.majyd.casa.data.model.CalendarEventException
 import com.majyd.casa.sync.DefaultDeviceManager
 import com.majyd.casa.sync.RoomSyncOperationRepository
 import com.majyd.casa.sync.SyncChangeNotifier
@@ -16,6 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.LocalDate
 
 @RunWith(AndroidJUnit4::class)
 class RoomCalendarRepositoryTest {
@@ -32,6 +34,7 @@ class RoomCalendarRepositoryTest {
             database = database,
             calendarDao = database.calendarDao(),
             placeDao = database.calendarPlaceDao(),
+            exceptionDao = database.calendarEventExceptionDao(),
             deviceManager = DefaultDeviceManager(RoomDeviceRepository(database.deviceDao())),
             syncOperationRepository = RoomSyncOperationRepository(database.syncOperationDao(), SyncChangeNotifier()),
         )
@@ -71,5 +74,41 @@ class RoomCalendarRepositoryTest {
         assertEquals("Cita medica", created.title)
         assertTrue(deleted?.deleted == true)
         assertTrue(restored?.deleted == false)
+    }
+
+    @Test
+    fun exception_isPersistedAndEnqueuedForSync() = runTest {
+        val now = System.currentTimeMillis()
+        val series = repository.upsertEvent(
+            eventId = null,
+            title = "Natacion",
+            notes = "",
+            location = "",
+            startAt = now,
+            endAt = now + 3_600_000L,
+            allDay = false,
+            reminderDaysBefore = null,
+            recurrenceType = "DAILY",
+        )
+        val date = LocalDate.now().plusDays(1)
+
+        repository.saveException(
+            CalendarEventException(
+                seriesId = series.id,
+                occurrenceDate = date,
+                title = "Natacion cambiada",
+                notes = "",
+                location = "",
+                startAt = now,
+                endAt = now + 3_600_000L,
+                allDay = false,
+                participantIds = emptySet(),
+                deleted = false,
+            ),
+        )
+
+        assertEquals("Natacion cambiada", repository.observeExceptions().first().single().title)
+        val householdId = database.deviceDao().getDevice()?.householdId.orEmpty()
+        assertTrue(database.syncOperationDao().observeAll(householdId).first().any { it.entityType == "calendar_exception" })
     }
 }
