@@ -55,6 +55,7 @@ data class CalendarUiState(
     val deletedEvents: List<CalendarEventItem> = emptyList(),
     val occurrences: List<CalendarOccurrence> = emptyList(),
     val nextOccurrence: CalendarOccurrence? = null,
+    val nextOccurrences: List<CalendarOccurrence> = emptyList(),
     val selectedDate: LocalDate = LocalDate.now(),
     val displayedMonth: YearMonth = YearMonth.now(),
     val selectedParticipantIds: Set<String> = emptySet(),
@@ -92,15 +93,17 @@ class CalendarViewModel @Inject constructor(
         val visible = items.filterNot { it.deleted }.filter { filter.isEmpty() || it.participantIds.any(filter::contains) }
         val today = LocalDate.now()
         val now = System.currentTimeMillis()
-        val next = CalendarRecurrenceExpander
+        val nextItems = CalendarRecurrenceExpander
             .expand(visible, exceptionItems, today, today.plusYears(1))
             .filter { it.startAt >= now }
-            .minByOrNull { it.startAt }
+            .sortedBy { it.startAt }
+            .take(2)
         CalendarUiState(
             activeEvents = visible,
             deletedEvents = items.filter { it.deleted },
             occurrences = CalendarRecurrenceExpander.expand(visible, exceptionItems, month.atDay(1), month.atEndOfMonth()),
-            nextOccurrence = next,
+            nextOccurrence = nextItems.firstOrNull(),
+            nextOccurrences = nextItems,
             selectedDate = day,
             displayedMonth = month,
             selectedParticipantIds = filter,
@@ -128,7 +131,12 @@ class CalendarViewModel @Inject constructor(
         draft.update { it.copy(startAt = formatEpoch(occurrence.startAt), endAt = formatEpoch(occurrence.endAt), occurrenceDate = occurrence.occurrenceDate) }
     }
     fun newEvent() { draft.value = CalendarDraft(startAt = dateTimeFor(selectedDate.value, LocalTime.of(23, 59)), endAt = dateTimeFor(selectedDate.value, LocalTime.of(23, 59))) }
-    fun newEventFor(date: LocalDate) { selectedDate.value = date; displayedMonth.value = YearMonth.from(date); newEvent() }
+    fun newEventFor(date: LocalDate) {
+        if (date.isBefore(LocalDate.now())) return
+        selectedDate.value = date
+        displayedMonth.value = YearMonth.from(date)
+        newEvent()
+    }
     fun clearDraft() { draft.value = CalendarDraft(); error.value = null }
     fun clearError() { error.value = null }
     fun updateTitle(value: String) = draft.update { it.copy(title = value) }
@@ -149,7 +157,17 @@ class CalendarViewModel @Inject constructor(
         val current = draft.value
         if (Normalizer.normalizeText(current.title).isBlank()) { error.value = "El titulo es obligatorio."; return@launch }
         val start = parseEpoch(current.startAt) ?: run { error.value = "La fecha y hora de inicio no son validas."; return@launch }
-        val end = (parseEpoch(current.endAt) ?: start).coerceAtLeast(start)
+        val endValue = parseEpoch(current.endAt)
+        val end = endValue ?: start
+        val startDate = java.time.Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate()
+        if (current.eventId == null && startDate.isBefore(LocalDate.now())) {
+            error.value = "No puedes crear eventos en fechas pasadas."
+            return@launch
+        }
+        if (end < start) {
+            error.value = "La fecha y hora final no puede ser anterior al inicio."
+            return@launch
+        }
         if (current.occurrenceDate != null && current.eventId != null) {
             calendarRepository.saveException(CalendarEventException(current.eventId, current.occurrenceDate, current.title.trim(), current.notes.trim(), current.location.trim(), start, end, current.allDay, current.participantIds, deleted = false))
             draft.value = CalendarDraft()

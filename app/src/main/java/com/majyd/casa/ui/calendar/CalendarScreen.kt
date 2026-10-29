@@ -2,6 +2,7 @@ package com.majyd.casa.ui.calendar
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,16 +48,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.majyd.casa.data.model.CalendarEventItem
 import com.majyd.casa.data.model.CalendarPlace
 import com.majyd.casa.data.model.CalendarRecurrenceType
+import com.majyd.casa.R
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -77,37 +85,45 @@ fun CalendarScreen(
     var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
     var draftOpen by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
-                    }
-                },
-                title = { Text("Agenda") },
-            )
-        },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item {
-                CalendarMonthCard(
-                    state = state,
-                    onPrevious = viewModel::previousMonth,
-                    onNext = viewModel::nextMonth,
-                    onSelectDate = viewModel::selectDate,
-                    onOpenDate = { selectedDay = it },
-                    onLongPressDate = { viewModel.newEventFor(it); draftOpen = true },
+    Box(Modifier.fillMaxSize()) {
+        Image(
+            painter = painterResource(R.drawable.agenda_background),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                    },
+                    title = { Text("Agenda", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold) },
                 )
-            }
-            item {
-                state.nextOccurrence?.let { occurrence ->
+            },
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item {
+                    CalendarMonthCard(
+                        state = state,
+                        onPrevious = viewModel::previousMonth,
+                        onNext = viewModel::nextMonth,
+                        onSelectDate = viewModel::selectDate,
+                        onOpenDate = { selectedDay = it },
+                        onLongPressDate = { if (!it.isBefore(LocalDate.now())) { viewModel.newEventFor(it); draftOpen = true } },
+                    )
+                }
+                items(state.nextOccurrences) { occurrence ->
                     NextEventCard(occurrence = occurrence, onClick = { selectedOccurrence = occurrence })
                 }
             }
@@ -172,11 +188,11 @@ private fun NextEventCard(
     occurrence: com.majyd.casa.data.model.CalendarOccurrence,
     onClick: () -> Unit,
 ) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFFFF8EE).copy(alpha = 0.94f))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Próximo evento", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Text(occurrence.source.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("${occurrence.occurrenceDate.dayOfMonth} de ${spanishMonth(occurrence.occurrenceDate.month.value)}", style = MaterialTheme.typography.bodyMedium)
+            Text("Próximo evento", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text(occurrence.source.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("${occurrence.occurrenceDate.dayOfMonth} de ${spanishMonth(occurrence.occurrenceDate.month.value)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -190,24 +206,25 @@ private fun CalendarDayDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${date.dayOfMonth} de ${spanishMonth(date.month.value)}") },
+        containerColor = Color(0xFFFFF8EE),
+        title = { Text("${date.dayOfMonth} de ${spanishMonth(date.month.value)}", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold) },
         text = {
             if (occurrences.isEmpty()) {
                 Text("Sin eventos")
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(occurrences) { occurrence ->
-                        Card(onClick = { onOpen(occurrence) }, modifier = Modifier.fillMaxWidth()) {
+                        Card(onClick = { onOpen(occurrence) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFFFF8EE))) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(occurrence.source.title, fontWeight = FontWeight.SemiBold)
-                                Text(if (occurrence.source.allDay) "Todo el día" else formatOccurrenceTime(occurrence))
+                                Text(occurrence.source.title, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                                Text(if (occurrence.source.allDay) "Todo el día" else formatOccurrenceTime(occurrence), fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+        confirmButton = { FilledTonalButton(onClick = onDismiss) { Text("Cerrar", fontWeight = FontWeight.ExtraBold) } },
     )
 }
 
@@ -223,16 +240,15 @@ private fun CalendarDraftDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        androidx.compose.material3.Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        androidx.compose.material3.Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                Image(painterResource(R.drawable.agenda_background), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(if (state.draft.eventId == null) "Nuevo evento" else "Editar evento", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = onDismiss) { Text("Volver") }
+                    Text(if (state.draft.eventId == null) "Nuevo evento" else "Editar evento", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                    FilledTonalButton(onClick = onDismiss) { Text("Volver", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold) }
                 }
-                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
                         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         CalendarDraftCard(
@@ -256,6 +272,7 @@ private fun CalendarDraftDialog(
                             onRecurrenceCustomUnitChange = viewModel::updateRecurrenceCustomUnit,
                         )
                     }
+                    }
                 }
             }
         }
@@ -272,21 +289,22 @@ private fun CalendarEventDetailDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(occurrence.source.title) },
+        containerColor = Color(0xFFFFF8EE),
+        title = { Text(occurrence.source.title, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (occurrence.source.allDay) "Todo el dia" else formatOccurrenceTime(occurrence))
-                if (participantNames.isNotEmpty()) Text("Participantes: ${participantNames.joinToString(", ")}")
-                if (occurrence.source.location.isNotBlank()) Text("Lugar: ${occurrence.source.location}")
-                if (occurrence.source.notes.isNotBlank()) Text(occurrence.source.notes)
-                if (occurrence.source.recurrenceType != CalendarRecurrenceType.NONE) Text("Repeticion: ${occurrence.source.recurrenceType.label}")
+                Text(if (occurrence.source.allDay) "Todo el dia" else formatOccurrenceTime(occurrence), fontWeight = FontWeight.Bold)
+                if (participantNames.isNotEmpty()) Text("Participantes: ${participantNames.joinToString(", ")}", fontWeight = FontWeight.Bold)
+                if (occurrence.source.location.isNotBlank()) Text("Lugar: ${occurrence.source.location}", fontWeight = FontWeight.Bold)
+                if (occurrence.source.notes.isNotBlank()) Text(occurrence.source.notes, fontWeight = FontWeight.Bold)
+                if (occurrence.source.recurrenceType != CalendarRecurrenceType.NONE) Text("Repeticion: ${occurrence.source.recurrenceType.label}", fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+        dismissButton = { FilledTonalButton(onClick = onDismiss) { Text("Cerrar", fontWeight = FontWeight.ExtraBold) } },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onEdit) { Text("Editar") }
-                TextButton(onClick = onDelete) { Text("Eliminar") }
+                FilledTonalButton(onClick = onEdit) { Text("Editar", fontWeight = FontWeight.ExtraBold) }
+                FilledTonalButton(onClick = onDelete) { Text("Eliminar", fontWeight = FontWeight.ExtraBold) }
             }
         },
     )
@@ -303,15 +321,18 @@ private fun CalendarMonthCard(
 ) {
     val first = state.displayedMonth.atDay(1)
     val gridStart = first.minusDays((first.dayOfWeek.value - DayOfWeek.MONDAY.value).toLong())
-    Card {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFFFF8EE).copy(alpha = 0.92f)),
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = onPrevious) { Text("‹") }
-                Text("${spanishMonth(state.displayedMonth.month.value)} ${state.displayedMonth.year}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("${spanishMonth(state.displayedMonth.month.value)} ${state.displayedMonth.year}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                 TextButton(onClick = onNext) { Text("›") }
             }
             Row(Modifier.fillMaxWidth()) {
-                listOf("L", "M", "X", "J", "V", "S", "D").forEach { Text(it, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = MaterialTheme.typography.labelMedium) }
+                listOf("L", "M", "X", "J", "V", "S", "D").forEach { Text(it, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold) }
             }
             repeat(6) { row ->
                 Row(Modifier.fillMaxWidth()) {
@@ -338,7 +359,7 @@ private fun CalendarMonthCard(
                                 .padding(vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Text(date.dayOfMonth.toString(), color = if (count > 0) MaterialTheme.colorScheme.onErrorContainer else if (inMonth) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
+                            Text(date.dayOfMonth.toString(), color = if (count > 0) MaterialTheme.colorScheme.onErrorContainer else if (inMonth) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold)
                             Text(if (count == 0) " " else "$count", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -357,7 +378,7 @@ private fun spanishMonth(month: Int): String = listOf(
 @Composable
 private fun CalendarParticipantFilters(state: CalendarUiState, onToggle: (String) -> Unit, onClear: () -> Unit) {
     if (state.household.people.isEmpty()) return
-    Card {
+    Card(colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFFFF8EE).copy(alpha = 0.84f)), shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Filtrar por persona", fontWeight = FontWeight.SemiBold)
@@ -393,9 +414,9 @@ private fun CalendarDraftCard(
     onRecurrenceUntilChange: (String) -> Unit,
     onRecurrenceCustomUnitChange: (String) -> Unit,
 ) {
-    Card {
+    Card(colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFFFF8EE).copy(alpha = 0.90f)), shape = RoundedCornerShape(22.dp)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Nuevo evento", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Nuevo evento", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             OutlinedTextField(
                 value = draft.title,
                 onValueChange = onTitleChange,
@@ -586,19 +607,28 @@ private val calendarDateFormatter = DateTimeFormatter.ofPattern("dd-MM-uuuu").wi
 
 @Composable
 private fun CalendarDateWheelPicker(value: String, onValueChange: (String) -> Unit) {
+    val today = LocalDate.now()
     val selectedDate = runCatching { LocalDate.parse(value.take(10), calendarDateFormatter) }.getOrElse { LocalDate.now() }
-    val yearRange = 2020..2100
+    val yearRange = today.year..2100
+    val selectedYear = selectedDate.year.coerceIn(yearRange.first, yearRange.last)
+    val minimumMonth = if (selectedYear == today.year) today.monthValue else 1
+    val selectedMonth = selectedDate.monthValue.coerceIn(minimumMonth, 12)
+    val monthLength = LocalDate.of(selectedYear, selectedMonth, 1).lengthOfMonth()
+    val minimumDay = if (selectedYear == today.year && selectedMonth == today.monthValue) today.dayOfMonth else 1
+    val selectedDay = selectedDate.dayOfMonth.coerceIn(minimumDay, monthLength)
+    fun safeDate(year: Int, month: Int, day: Int): LocalDate = LocalDate.of(year, month, day).let { date -> if (date.isBefore(today)) today else date }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        CalendarWheel("Dia", 1..selectedDate.lengthOfMonth(), selectedDate.dayOfMonth) { day ->
-            onValueChange(updateCalendarDateTime(value, LocalDate.of(selectedDate.year, selectedDate.monthValue, day)))
+        CalendarWheel("Dia", minimumDay..monthLength, selectedDay) { day ->
+            onValueChange(updateCalendarDateTime(value, safeDate(selectedYear, selectedMonth, day)))
         }
-        CalendarWheel("Mes", 1..12, selectedDate.monthValue) { month ->
-            val day = min(selectedDate.dayOfMonth, LocalDate.of(selectedDate.year, month, 1).lengthOfMonth())
-            onValueChange(updateCalendarDateTime(value, LocalDate.of(selectedDate.year, month, day)))
+        CalendarWheel("Mes", minimumMonth..12, selectedMonth) { month ->
+            val day = min(selectedDay, LocalDate.of(selectedYear, month, 1).lengthOfMonth())
+            onValueChange(updateCalendarDateTime(value, safeDate(selectedYear, month, day)))
         }
-        CalendarWheel("Ano", yearRange, selectedDate.year.coerceIn(yearRange.first, yearRange.last)) { year ->
-            val day = min(selectedDate.dayOfMonth, LocalDate.of(year, selectedDate.monthValue, 1).lengthOfMonth())
-            onValueChange(updateCalendarDateTime(value, LocalDate.of(year, selectedDate.monthValue, day)))
+        CalendarWheel("Año", yearRange, selectedYear) { year ->
+            val month = selectedMonth.coerceIn(if (year == today.year) today.monthValue else 1, 12)
+            val day = min(selectedDay, LocalDate.of(year, month, 1).lengthOfMonth())
+            onValueChange(updateCalendarDateTime(value, safeDate(year, month, day)))
         }
     }
 }
