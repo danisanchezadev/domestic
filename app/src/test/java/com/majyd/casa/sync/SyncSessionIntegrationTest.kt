@@ -112,6 +112,11 @@ class SyncSessionIntegrationTest {
         override suspend fun setDarkMode(enabled: Boolean) { update { it.copy(darkMode = enabled) } }
         override suspend fun getPairingCode(): String = "123456"
         override suspend fun setPairingCode(code: String) = Unit
+        override suspend fun isPairingCodeUsable(): Boolean = true
+        override suspend fun recordPairingFailure() = Unit
+        override suspend fun resetPairingAttempts() = Unit
+        override suspend fun getSyncAuthToken(): String = "123456"
+        override suspend fun setSyncAuthToken(token: String) = Unit
     }
 
     companion object {

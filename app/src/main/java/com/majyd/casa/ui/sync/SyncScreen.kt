@@ -64,12 +64,14 @@ fun SyncScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showOptions by remember { mutableStateOf(false) }
+    var showHostQr by remember { mutableStateOf(false) }
     var showQr by remember { mutableStateOf(false) }
     var unlinkDevice by remember { mutableStateOf<String?>(null) }
     var localName by remember(state.localDisplayName) { mutableStateOf(state.localDisplayName) }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) showQr = true else viewModel.showMessage("Necesito permiso de cámara para escanear el QR")
     }
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { viewModel.refreshWifiState() }
     val linkedDevice = state.authorizedDevices.firstOrNull { it.deviceId != state.localDeviceId && !it.revoked }
     val isLinked = linkedDevice != null
     val remoteAvailable = linkedDevice?.let { remote -> state.devices.any { it.deviceId == remote.deviceId } } == true
@@ -77,10 +79,14 @@ fun SyncScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { snackbarHostState.showSnackbar(it) }
     }
+    LaunchedEffect(Unit) { viewModel.refreshWifiState() }
     if (showQr) {
         QrScannerDialog(
             onResult = { value ->
-                parsePairingPayload(value)?.let { viewModel.updateJoinCode(it.pairingCode) }
+                parsePairingPayload(value)?.let {
+                    viewModel.updateJoinCode(it.pairingCode)
+                    viewModel.selectDeviceById(it.deviceId)
+                }
                     ?: viewModel.showMessage("El QR no pertenece a Domestic")
                 showQr = false
             },
@@ -118,6 +124,29 @@ fun SyncScreen(
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(if (isLinked) "Móvil vinculado" else "Sin vincular", style = MaterialTheme.typography.titleLarge)
                         Text(if (isLinked) "Este móvil puede sincronizar los datos de la casa." else "Vincula este móvil con otro conectado a la misma Wi-Fi.")
+                        Text("Red doméstica", style = MaterialTheme.typography.titleMedium)
+                        OutlinedTextField(
+                            value = state.domesticWifiSsid,
+                            onValueChange = viewModel::updateDomesticWifiSsid,
+                            label = { Text("SSID de la Wi-Fi permitida") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            when {
+                                !state.wifiConnected -> "No estás conectado a una red Wi-Fi"
+                                state.currentWifiSsid == null -> "Android no permite identificar el SSID en este momento"
+                                state.domesticWifiSsid.isBlank() -> "Conectado a ${state.currentWifiSsid}"
+                                state.currentWifiSsid == state.domesticWifiSsid -> "Conectado a la red doméstica configurada"
+                                else -> "Conectado a ${state.currentWifiSsid}, distinta de la red configurada"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                            OutlinedButton(onClick = { locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }) {
+                                Text("Permitir identificar la Wi-Fi")
+                            }
+                        }
                         OutlinedTextField(
                             value = localName,
                             onValueChange = { localName = it },
@@ -140,6 +169,10 @@ fun SyncScreen(
                             OutlinedButton(onClick = { linkedDevice?.deviceId?.let { unlinkDevice = it } }, modifier = Modifier.fillMaxWidth()) {
                                 Text("Desvincular dispositivo")
                             }
+                            OutlinedButton(onClick = { showOptions = !showOptions }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Link, null)
+                                Text("Vincular otro móvil", Modifier.padding(start = 8.dp))
+                            }
                         } else {
                             Button(onClick = { showOptions = !showOptions }, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Default.Link, null)
@@ -149,11 +182,25 @@ fun SyncScreen(
                     }
                 }
             }
-            if (!isLinked && showOptions) {
+            if (showOptions) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Unirse a una casa", style = MaterialTheme.typography.titleMedium)
+                            Text("Vincular otro móvil", style = MaterialTheme.typography.titleMedium)
+                            OutlinedButton(onClick = {
+                                showHostQr = !showHostQr
+                                if (showHostQr) viewModel.refreshPairingCode()
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.QrCode, null)
+                                Text(if (showHostQr) "Ocultar mi QR" else "Mostrar mi QR", Modifier.padding(start = 8.dp))
+                            }
+                            if (showHostQr) {
+                                Text("El otro móvil debe estar conectado a esta misma Wi-Fi")
+                                Text(state.pairingCode, style = MaterialTheme.typography.displaySmall)
+                                Text("Este código caduca en 15 minutos y se bloquea tras 5 intentos fallidos.", style = MaterialTheme.typography.bodySmall)
+                                TextButton(onClick = viewModel::regeneratePairingCode) { Text("Generar otro código") }
+                                if (state.pairingPayload.isNotBlank()) Image(createPairingQr(state.pairingPayload).asImageBitmap(), "Código QR", Modifier.fillMaxWidth())
+                            }
                             OutlinedButton(
                                 onClick = {
                                     state.devices.firstOrNull()?.let(viewModel::select)
@@ -191,16 +238,6 @@ fun SyncScreen(
                                     }
                                 }
                             } else Text("Espera unos segundos mientras se buscan móviles en esta Wi-Fi.")
-                        }
-                    }
-                }
-                item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Crear una casa", style = MaterialTheme.typography.titleMedium)
-                            Text("Comparte este código con el otro móvil")
-                            Text(state.pairingCode, style = MaterialTheme.typography.displaySmall)
-                            if (state.pairingPayload.isNotBlank()) Image(createPairingQr(state.pairingPayload).asImageBitmap(), "Código QR", Modifier.fillMaxWidth())
                         }
                     }
                 }

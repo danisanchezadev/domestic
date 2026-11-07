@@ -14,6 +14,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.util.Base64
 
 @Singleton
 class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
@@ -25,6 +26,9 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
         authToken: String,
         operations: List<SyncOperation>,
         localDeviceId: String,
+        localDisplayName: String,
+        pairing: Boolean,
+        onPairingToken: (String) -> Unit,
         onProgress: (TransportPhase) -> Unit,
     ): List<SyncOperation> = withContext(Dispatchers.IO) {
         require(host.isNotBlank()) { "Host vacío" }
@@ -34,18 +38,40 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
             connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
             soTimeout = READ_TIMEOUT_MS
         }.use { socket ->
-            val crypto = SyncCrypto(authToken)
+            val pairingCrypto = SyncCrypto(authToken)
+            var crypto = pairingCrypto
             val writer = PrintWriter(socket.getOutputStream(), true)
             val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
             val clientNonce = SyncCrypto.nonce()
-            writeLine(writer, HELLO_PREFIX + localDeviceId + HELLO_SEPARATOR + clientNonce)
+            val mode = if (pairing) PAIRING_MODE else SYNC_MODE
+            val hello = if (localDisplayName.isBlank()) {
+                HELLO_PREFIX + localDeviceId + HELLO_SEPARATOR + mode + HELLO_SEPARATOR + clientNonce
+            } else {
+                val encodedAlias = Base64.getUrlEncoder().withoutPadding().encodeToString(localDisplayName.toByteArray(Charsets.UTF_8))
+                HELLO_PREFIX + localDeviceId + HELLO_SEPARATOR + encodedAlias + HELLO_SEPARATOR + mode + HELLO_SEPARATOR + clientNonce
+            }
+            writeLine(writer, hello)
             onProgress(TransportPhase.AUTHENTICATING)
             val challenge = readRequiredLine(reader, "challenge")
             require(challenge.startsWith(CHALLENGE_PREFIX)) { "Handshake inválido" }
             val serverNonce = challenge.removePrefix(CHALLENGE_PREFIX)
-            writeLine(writer, RESPONSE_PREFIX + crypto.proof(clientNonce, serverNonce))
-            if (readRequiredLine(reader, "auth response") != AUTH_OK) {
+            writeLine(writer, RESPONSE_PREFIX + pairingCrypto.proof(clientNonce, serverNonce))
+            val authResponse = readRequiredLine(reader, "auth response")
+            if (authResponse == AUTH_EXPIRED) {
+                throw SecurityException("Código de vinculación caducado o bloqueado")
+            }
+            if (authResponse != AUTH_OK) {
                 throw SecurityException("Código de emparejamiento incorrecto")
+            }
+            if (pairing) {
+                val tokenLine = readRequiredLine(reader, "pairing token")
+                val token = runCatching { pairingCrypto.decrypt(tokenLine) }
+                    .getOrNull()
+                    ?.removePrefix(PAIRING_TOKEN_PREFIX)
+                    ?.takeIf { it.length >= 32 }
+                    ?: throw SecurityException("No se recibió la credencial de sincronización")
+                onPairingToken(token)
+                crypto = SyncCrypto(token)
             }
             onProgress(TransportPhase.SYNCHRONIZING)
             operations.forEach { writeLine(writer, crypto.encrypt(json.encodeToString(it))) }
@@ -61,7 +87,13 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
         operationHandler: suspend (SyncOperation) -> Boolean,
         operationProvider: suspend () -> List<SyncOperation>,
         authorization: suspend (String) -> Boolean,
+        pairingCode: String,
+        pairingCodeValid: suspend () -> Boolean,
+        onPairingFailure: suspend () -> Unit,
+        authorizedAuthToken: suspend (String) -> String?,
         onAuthorized: suspend (String) -> Unit,
+        onAuthorizedWithAlias: suspend (String, String) -> Unit,
+        onPaired: suspend (String, String) -> Unit,
     ): Int = withContext(Dispatchers.IO) {
         require(port in 1..65535) { "Puerto no válido" }
         ServerSocket(port).use { server ->
@@ -76,20 +108,34 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
                     writeLine(writer, END_MARKER)
                     return@use 0
                 }
-                val helloParts = hello.removePrefix(HELLO_PREFIX).split(HELLO_SEPARATOR, limit = 2)
-                if (helloParts.size != 2 || helloParts[0].isBlank() || helloParts[1].isBlank()) {
+                val helloParts = hello.removePrefix(HELLO_PREFIX).split(HELLO_SEPARATOR, limit = 4)
+                if (helloParts.size !in 2..4 || helloParts[0].isBlank() || helloParts.last().isBlank()) {
                     writeLine(writer, AUTH_FAILED)
                     writeLine(writer, END_MARKER)
                     return@use 0
                 }
                 val remoteDeviceId = helloParts[0]
-                val clientNonce = helloParts[1]
+                val remoteAlias = helloParts.getOrNull(1)
+                    ?.takeIf { helloParts.size >= 3 && it != PAIRING_MODE && it != SYNC_MODE }
+                    ?.let { runCatching { String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8) }.getOrNull() }
+                    ?.trim()
+                    ?.take(MAX_ALIAS_LENGTH)
+                    .orEmpty()
+                val pairingRequest = helloParts.getOrNull(helloParts.size - 2) == PAIRING_MODE
+                val clientNonce = helloParts.last()
                 val serverNonce = SyncCrypto.nonce()
                 writeLine(writer, CHALLENGE_PREFIX + serverNonce)
                 val response = readRequiredLine(reader, "auth response").removePrefix(RESPONSE_PREFIX)
-                val crypto = SyncCrypto(authToken)
-                if (!SyncCrypto.constantTimeEquals(response, crypto.proof(clientNonce, serverNonce))) {
+                val handshakeToken = if (pairingRequest) pairingCode else (authorizedAuthToken(remoteDeviceId) ?: authToken)
+                val handshakeCrypto = SyncCrypto(handshakeToken)
+                if (!SyncCrypto.constantTimeEquals(response, handshakeCrypto.proof(clientNonce, serverNonce))) {
+                    if (pairingRequest) onPairingFailure()
                     writeLine(writer, AUTH_FAILED)
+                    writeLine(writer, END_MARKER)
+                    return@use 0
+                }
+                if (pairingRequest && !pairingCodeValid()) {
+                    writeLine(writer, AUTH_EXPIRED)
                     writeLine(writer, END_MARKER)
                     return@use 0
                 }
@@ -99,7 +145,16 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
                     return@use 0
                 }
                 onAuthorized(remoteDeviceId)
+                onAuthorizedWithAlias(remoteDeviceId, remoteAlias)
                 writeLine(writer, AUTH_OK)
+                val crypto = if (pairingRequest) {
+                    val permanentToken = SyncCrypto.nonce() + SyncCrypto.nonce()
+                    writeLine(writer, handshakeCrypto.encrypt(PAIRING_TOKEN_PREFIX + permanentToken))
+                    onPaired(remoteDeviceId, permanentToken)
+                    SyncCrypto(permanentToken)
+                } else {
+                    handshakeCrypto
+                }
                 var endReceived = false
                 val acknowledgements = buildList {
                     while (true) {
@@ -174,11 +229,16 @@ class SocketLocalWifiTransport @Inject constructor() : LocalWifiTransport {
         private const val RESPONSE_PREFIX = "CASA_RESPONSE:"
         private const val AUTH_OK = "CASA_AUTH_OK"
         private const val AUTH_FAILED = "CASA_AUTH_FAILED"
+        private const val AUTH_EXPIRED = "CASA_AUTH_EXPIRED"
+        private const val PAIRING_MODE = "PAIRING"
+        private const val SYNC_MODE = "SYNC"
+        private const val PAIRING_TOKEN_PREFIX = "CASA_PAIRING_TOKEN:"
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val READ_TIMEOUT_MS = 15_000
         private const val ACCEPT_TIMEOUT_MS = 30_000
         // Shopping photos are transported in the encrypted JSON operation.
         // Keep a bounded limit, but allow normal camera photos to sync.
         private const val MAX_LINE_LENGTH = 16 * 1024 * 1024
+        private const val MAX_ALIAS_LENGTH = 80
     }
 }

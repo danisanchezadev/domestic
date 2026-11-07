@@ -9,6 +9,9 @@ interface SyncTransport {
         authToken: String,
         operations: List<SyncOperation>,
         localDeviceId: String = "local",
+        localDisplayName: String = "",
+        pairing: Boolean = false,
+        onPairingToken: (String) -> Unit = {},
         onProgress: (TransportPhase) -> Unit = {},
     ): List<SyncOperation>
 }

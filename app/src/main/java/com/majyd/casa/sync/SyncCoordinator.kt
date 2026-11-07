@@ -86,7 +86,7 @@ class SyncCoordinator @Inject constructor(
                     try {
                         transport.acceptOnce(
                             port = PORT,
-                            authToken = settingsRepository.getPairingCode(),
+                            authToken = settingsRepository.getSyncAuthToken(),
                             localDeviceId = device.deviceId,
                             operationHandler = { operation ->
                                 operation.householdId == deviceManager.ensureDevice().householdId &&
@@ -129,6 +129,24 @@ class SyncCoordinator @Inject constructor(
                                     )
                                 )
                             },
+                            onAuthorizedWithAlias = { remoteDeviceId, remoteAlias ->
+                                if (remoteAlias.isNotBlank()) {
+                                    val current = deviceManager.ensureDevice()
+                                    authorizedDeviceDao.get(remoteDeviceId)?.let { existing ->
+                                        authorizedDeviceDao.upsert(existing.copy(displayName = remoteAlias, lastSeenAt = System.currentTimeMillis()))
+                                    } ?: authorizedDeviceDao.upsert(
+                                        AuthorizedDeviceEntity(remoteDeviceId, current.householdId, remoteAlias, System.currentTimeMillis())
+                                    )
+                                }
+                            },
+                            pairingCode = settingsRepository.getPairingCode(),
+                            pairingCodeValid = { settingsRepository.isPairingCodeUsable() },
+                            onPairingFailure = { settingsRepository.recordPairingFailure() },
+                            authorizedAuthToken = { settingsRepository.getSyncAuthToken() },
+                            onPaired = { _, token ->
+                                settingsRepository.setSyncAuthToken(token)
+                                settingsRepository.resetPairingAttempts()
+                            },
                         )
                     } catch (error: CancellationException) {
                         throw error
@@ -160,7 +178,7 @@ class SyncCoordinator @Inject constructor(
                                         peer.host,
                                         peer.port,
                                         current.householdId,
-                                        settingsRepository.getPairingCode(),
+                                        settingsRepository.getSyncAuthToken(),
                                     )
                                     val peerId = peer.deviceId ?: peer.serviceName
                                     authorizedDeviceDao.upsert(
@@ -216,7 +234,7 @@ class SyncCoordinator @Inject constructor(
                     peer.host,
                     peer.port,
                     current.householdId,
-                    settingsRepository.getPairingCode(),
+                    settingsRepository.getSyncAuthToken(),
                     manual = true,
                 ) { progress -> onProgress(progress.copy(remoteDevice = peer.serviceName)) }
             } catch (error: SyncFailureException) {
@@ -250,12 +268,16 @@ class SyncCoordinator @Inject constructor(
         return mutex.withLock {
             val current = deviceManager.ensureDevice()
             onProgress(SyncProgress(SyncPhase.CONNECTING, remoteDevice = peer.serviceName))
+            var receivedToken: String? = null
             val incoming = transport.exchange(
                 peer.host,
                 peer.port,
                 code,
                 emptyList(),
                 current.deviceId,
+                current.displayName,
+                pairing = true,
+                onPairingToken = { receivedToken = it },
             ) { phase ->
                 onProgress(SyncProgress(phase.toSyncPhaseForPairing(), remoteDevice = peer.serviceName))
             }
@@ -264,6 +286,7 @@ class SyncCoordinator @Inject constructor(
             onProgress(SyncProgress(SyncPhase.SYNCHRONIZING, remoteDevice = peer.serviceName, received = incoming.size))
             deviceManager.joinHousehold(householdId)
             settingsRepository.setPairingCode(code)
+            settingsRepository.setSyncAuthToken(receivedToken ?: throw SyncFailureException(SyncError.InvalidCredentials))
             incoming.filterNot { it.applied }.forEach { operation ->
                 if (!syncSession.applyIncoming(operation)) throw SyncFailureException(SyncError.DatabaseApplyError)
             }
@@ -285,7 +308,7 @@ class SyncCoordinator @Inject constructor(
                     peer.host,
                     peer.port,
                     current.householdId,
-                    settingsRepository.getPairingCode(),
+                    settingsRepository.getSyncAuthToken(),
                 )
             }
             true

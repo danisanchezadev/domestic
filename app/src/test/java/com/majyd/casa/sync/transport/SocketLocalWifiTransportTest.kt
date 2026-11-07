@@ -97,6 +97,71 @@ class SocketLocalWifiTransportTest {
     }
 
     @Test
+    fun pairingIssuesPermanentTokenAfterPinAuthentication() = runBlocking {
+        val port = ServerSocket(0).use { it.localPort }
+        val transport = SocketLocalWifiTransport()
+        var serverToken = ""
+        var clientToken = ""
+        val server = launch(Dispatchers.IO) {
+            transport.acceptOnce(
+                port = port,
+                authToken = "legacy-token",
+                pairingCode = TOKEN,
+                pairingCodeValid = { true },
+                authorization = { true },
+                onPaired = { _, token -> serverToken = token },
+                operationHandler = { true },
+                operationProvider = { emptyList() },
+            )
+        }
+
+        delay(100)
+        transport.exchange(
+            host = "127.0.0.1",
+            port = port,
+            authToken = TOKEN,
+            operations = emptyList(),
+            pairing = true,
+            onPairingToken = { clientToken = it },
+        )
+        server.join()
+
+        assertTrue(serverToken.length >= 32)
+        assertEquals(serverToken, clientToken)
+        assertTrue(serverToken != TOKEN)
+    }
+
+    @Test
+    fun pairingRejectsExpiredPinBeforeAuthorization() = runBlocking {
+        val port = ServerSocket(0).use { it.localPort }
+        val transport = SocketLocalWifiTransport()
+        var authorized = false
+        val server = launch(Dispatchers.IO) {
+            transport.acceptOnce(
+                port = port,
+                authToken = "legacy-token",
+                pairingCode = TOKEN,
+                pairingCodeValid = { false },
+                authorization = { authorized = true; true },
+                operationHandler = { true },
+                operationProvider = { emptyList() },
+            )
+        }
+
+        delay(100)
+        var rejected = false
+        try {
+            transport.exchange("127.0.0.1", port, TOKEN, emptyList(), pairing = true)
+        } catch (error: SecurityException) {
+            rejected = error.message?.contains("caducado") == true
+        }
+        server.join()
+
+        assertTrue(rejected)
+        assertTrue(!authorized)
+    }
+
+    @Test
     fun exchangeRejectsUnauthorizedDevice() = runBlocking {
         val port = ServerSocket(0).use { it.localPort }
         val transport = SocketLocalWifiTransport()

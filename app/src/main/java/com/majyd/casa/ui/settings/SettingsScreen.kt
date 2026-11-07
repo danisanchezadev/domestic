@@ -1,9 +1,5 @@
 package com.majyd.casa.ui.settings
 
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -48,7 +44,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -62,9 +57,8 @@ private const val MAX_GROUP_NAME_LENGTH = 9
 private enum class SettingsSection(val title: String) {
     MENU("Ajustes"),
     GROUPS("Grupos"),
-    HOUSEHOLD("Hogar y sincronizacion"),
+    HOUSEHOLD("Hogar"),
     HOME_NAME("Nombre de la casa"),
-    WIFI("Red domestica"),
     APPEARANCE("Apariencia"),
     DASHBOARD("Tarjetas resumen"),
 }
@@ -81,8 +75,6 @@ fun SettingsScreen(
     val device by viewModel.device.collectAsStateWithLifecycle()
     val personActionMessage by viewModel.personActionMessage.collectAsStateWithLifecycle()
     val pendingPersonDeletion by viewModel.pendingPersonDeletion.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val locationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     var section by remember { mutableStateOf(SettingsSection.MENU) }
     var newPersonName by remember { mutableStateOf("") }
     var newGroupName by remember { mutableStateOf("") }
@@ -101,7 +93,10 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (section) {
-                SettingsSection.MENU -> SettingsMenu { section = it }
+            SettingsSection.MENU -> SettingsMenu(
+                onSelect = { section = it },
+                onOpenSync = onOpenSync,
+            )
                 SettingsSection.GROUPS -> GroupsSection(
                     household = household,
                     newGroupName = newGroupName,
@@ -121,17 +116,8 @@ fun SettingsScreen(
                     onRenamePerson = viewModel::renamePerson,
                     onAssignDevice = viewModel::assignDevice,
                     onDeletePerson = viewModel::deletePerson,
-                    onOpenSync = onOpenSync,
                 )
                 SettingsSection.HOME_NAME -> HomeNameSection(preferences.homeName, viewModel::updateHomeName)
-                SettingsSection.WIFI -> WifiSection(
-                    ssid = preferences.domesticWifiSsid,
-                    onSsidChange = viewModel::updateDomesticWifiSsid,
-                    needsPermission = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED,
-                    onRequestPermission = {
-                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                    },
-                )
                 SettingsSection.APPEARANCE -> AppearanceSection(
                     darkMode = preferences.darkMode,
                     colorTheme = preferences.colorTheme,
@@ -169,16 +155,16 @@ fun SettingsScreen(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SettingsMenu(onSelect: (SettingsSection) -> Unit) {
+private fun SettingsMenu(onSelect: (SettingsSection) -> Unit, onOpenSync: () -> Unit) {
     FlowRow(
         maxItemsInEachRow = 2,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SettingMenuCard("Grupos", "Personas y grupos", Icons.Filled.Group) { onSelect(SettingsSection.GROUPS) }
-        SettingMenuCard("Hogar y sincronizacion", "Perfiles y dispositivos", Icons.Filled.Home) { onSelect(SettingsSection.HOUSEHOLD) }
+        SettingMenuCard("Hogar", "Personas y grupos", Icons.Filled.Home) { onSelect(SettingsSection.HOUSEHOLD) }
+        SettingMenuCard("Union de dispositivos", "Wi-Fi, QR y sincronizacion", Icons.Filled.Wifi) { onOpenSync() }
         SettingMenuCard("Nombre de la casa", "Identidad del hogar", Icons.Filled.Home) { onSelect(SettingsSection.HOME_NAME) }
-        SettingMenuCard("Red domestica", "Wi-Fi permitida", Icons.Filled.Wifi) { onSelect(SettingsSection.WIFI) }
         SettingMenuCard("Apariencia", "Colores y modo oscuro", Icons.Filled.Palette) { onSelect(SettingsSection.APPEARANCE) }
         SettingMenuCard("Tarjetas resumen", "Orden y visibilidad", Icons.Filled.Tune) { onSelect(SettingsSection.DASHBOARD) }
     }
@@ -250,9 +236,7 @@ private fun HouseholdSection(
     onRenamePerson: (String, String) -> Unit,
     onAssignDevice: (String?) -> Unit,
     onDeletePerson: (String) -> Unit,
-    onOpenSync: () -> Unit,
 ) {
-    Button(onClick = onOpenSync, modifier = Modifier.fillMaxWidth()) { Text("Sincronizacion inicial de dispositivos") }
     Card {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Identificador: ${household.householdId}", style = MaterialTheme.typography.bodySmall)

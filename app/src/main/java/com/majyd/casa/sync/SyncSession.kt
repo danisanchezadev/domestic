@@ -37,12 +37,14 @@ class SyncSession @Inject constructor(
         onProgress: (SyncProgress) -> Unit = {},
     ): SyncResult {
         val pending = operationRepository.observePending(householdId).first()
+        val device = deviceManager.ensureDevice()
         val incoming = transport.exchange(
-            host,
-            port,
-            authToken,
-            pending,
-            deviceManager.ensureDevice().deviceId,
+            host = host,
+            port = port,
+            authToken = authToken,
+            operations = pending,
+            localDeviceId = device.deviceId,
+            localDisplayName = device.displayName,
         ) { phase ->
             onProgress(
                 SyncProgress(

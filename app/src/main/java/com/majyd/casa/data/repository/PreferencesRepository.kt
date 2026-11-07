@@ -4,9 +4,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import com.majyd.casa.data.model.AppPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -24,6 +26,9 @@ class PreferencesRepository @Inject constructor(
 
     private val preferencesKey = stringPreferencesKey("app_preferences_json")
     private val pairingCodeKey = stringPreferencesKey("sync_pairing_code")
+    private val pairingIssuedAtKey = longPreferencesKey("sync_pairing_issued_at")
+    private val pairingAttemptsKey = longPreferencesKey("sync_pairing_attempts")
+    private val syncAuthTokenKey = stringPreferencesKey("sync_auth_token")
 
     override val preferences: Flow<AppPreferences> = dataStore.data.map { prefs ->
         prefs[preferencesKey]
@@ -47,13 +52,66 @@ class PreferencesRepository @Inject constructor(
     override suspend fun getPairingCode(): String {
         var result = ""
         dataStore.edit { prefs ->
-            result = prefs[pairingCodeKey] ?: Random.nextInt(100000, 1000000).toString().also { prefs[pairingCodeKey] = it }
+            val now = System.currentTimeMillis()
+            val issuedAt = prefs[pairingIssuedAtKey] ?: 0L
+            val current = prefs[pairingCodeKey]
+            result = if (current.isNullOrBlank() || issuedAt == 0L || now - issuedAt > PAIRING_CODE_LIFETIME_MS) {
+                Random.nextInt(100000, 1000000).toString().also {
+                    prefs[pairingCodeKey] = it
+                    prefs[pairingIssuedAtKey] = now
+                    prefs[pairingAttemptsKey] = 0L
+                }
+            } else {
+                current
+            }
         }
         return result
     }
 
     override suspend fun setPairingCode(code: String) {
         require(code.length == 6 && code.all(Char::isDigit)) { "El código debe tener 6 dígitos" }
-        dataStore.edit { it[pairingCodeKey] = code }
+        dataStore.edit {
+            it[pairingCodeKey] = code
+            it[pairingIssuedAtKey] = System.currentTimeMillis()
+            it[pairingAttemptsKey] = 0L
+        }
+    }
+
+    override suspend fun isPairingCodeUsable(): Boolean = dataStore.data.map { prefs ->
+        val issuedAt = prefs[pairingIssuedAtKey] ?: return@map false
+        val attempts = prefs[pairingAttemptsKey] ?: 0L
+        !prefs[pairingCodeKey].isNullOrBlank() &&
+            attempts < MAX_PAIRING_ATTEMPTS &&
+            System.currentTimeMillis() - issuedAt <= PAIRING_CODE_LIFETIME_MS
+    }.first()
+
+    override suspend fun recordPairingFailure() {
+        dataStore.edit { prefs ->
+            prefs[pairingAttemptsKey] = (prefs[pairingAttemptsKey] ?: 0L) + 1L
+        }
+    }
+
+    override suspend fun resetPairingAttempts() {
+        dataStore.edit { it[pairingAttemptsKey] = 0L }
+    }
+
+    override suspend fun getSyncAuthToken(): String {
+        var result = ""
+        dataStore.edit { prefs ->
+            result = prefs[syncAuthTokenKey] ?: prefs[pairingCodeKey].orEmpty().ifBlank {
+                Random.nextBytes(32).joinToString("") { byte -> "%02x".format(byte) }
+            }.also { prefs[syncAuthTokenKey] = it }
+        }
+        return result
+    }
+
+    override suspend fun setSyncAuthToken(token: String) {
+        require(token.length >= 32) { "La credencial de sincronización no es válida" }
+        dataStore.edit { it[syncAuthTokenKey] = token }
+    }
+
+    companion object {
+        private const val PAIRING_CODE_LIFETIME_MS = 15 * 60 * 1000L
+        private const val MAX_PAIRING_ATTEMPTS = 5L
     }
 }

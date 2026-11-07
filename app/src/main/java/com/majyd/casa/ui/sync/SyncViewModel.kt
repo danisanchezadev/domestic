@@ -12,6 +12,7 @@ import com.majyd.casa.sync.SyncFailureException
 import com.majyd.casa.sync.SyncPhase
 import com.majyd.casa.sync.SyncProgress
 import com.majyd.casa.sync.transport.NearbyDevice
+import com.majyd.casa.sync.transport.WifiNetworkPolicy
 import com.majyd.casa.data.repository.SettingsRepository
 import com.majyd.casa.data.local.dao.AuthorizedDeviceDao
 import com.majyd.casa.data.local.entities.AuthorizedDeviceEntity
@@ -26,12 +27,14 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 data class SyncUiState(
     val devices: List<NearbyDevice> = emptyList(),
     val selectedDevice: NearbyDevice? = null,
+    val pairingDeviceId: String? = null,
     val pairingCode: String = "",
     val joinCode: String = "",
     val pairingPayload: String = "",
@@ -43,6 +46,9 @@ data class SyncUiState(
     val backupExported: Boolean = false,
     val localDeviceId: String? = null,
     val localDisplayName: String = "",
+    val domesticWifiSsid: String = "",
+    val currentWifiSsid: String? = null,
+    val wifiConnected: Boolean = false,
     val lastSyncAt: Long? = null,
     val phase: SyncPhase = SyncPhase.IDLE,
     val startedAt: Long? = null,
@@ -65,6 +71,7 @@ class SyncViewModel @Inject constructor(
     private val syncCoordinator: SyncCoordinator,
     private val settingsRepository: SettingsRepository,
     private val authorizedDeviceDao: AuthorizedDeviceDao,
+    private val wifiNetworkPolicy: WifiNetworkPolicy,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SyncUiState())
     val state: StateFlow<SyncUiState> = _state.asStateFlow()
@@ -79,7 +86,10 @@ class SyncViewModel @Inject constructor(
             _state.value = _state.value.copy(
                 pairingCode = pairingCode,
                 localDisplayName = device.displayName,
-                pairingPayload = "CASA|${device.householdId}|$pairingCode",
+                domesticWifiSsid = settingsRepository.preferences.first().domesticWifiSsid,
+                currentWifiSsid = wifiNetworkPolicy.currentSsid(),
+                wifiConnected = wifiNetworkPolicy.isConnectedToWifi(),
+                pairingPayload = "CASA|${device.householdId}|$pairingCode|${device.deviceId}",
                 localDeviceId = device.deviceId,
             )
         }
@@ -94,6 +104,7 @@ class SyncViewModel @Inject constructor(
                 }
                 _state.value = current.copy(
                     lastSyncAt = preferences.lastManualSyncAt,
+                    domesticWifiSsid = preferences.domesticWifiSsid,
                     phase = if (current.running) current.phase else persistedPhase,
                     finishedAt = if (current.running) current.finishedAt else preferences.lastManualSyncAt,
                     remoteDevice = if (current.running) current.remoteDevice else preferences.lastManualRemoteDevice,
@@ -119,13 +130,23 @@ class SyncViewModel @Inject constructor(
         }
         viewModelScope.launch {
             syncCoordinator.nearbyDevices.collect { devices ->
-                _state.value = _state.value.copy(devices = devices)
+                val preferred = _state.value.pairingDeviceId?.let { id -> devices.firstOrNull { it.deviceId == id } }
+                _state.value = _state.value.copy(
+                    devices = devices,
+                    selectedDevice = preferred ?: _state.value.selectedDevice,
+                )
             }
         }
     }
 
     fun select(device: NearbyDevice) {
         _state.value = _state.value.copy(selectedDevice = device, message = null)
+    }
+
+    fun selectDeviceById(deviceId: String?) {
+        if (deviceId == null) return
+        val device = _state.value.devices.firstOrNull { it.deviceId == deviceId }
+        _state.value = _state.value.copy(pairingDeviceId = deviceId, selectedDevice = device ?: _state.value.selectedDevice, message = null)
     }
 
     fun updatePairingCode(code: String) {
@@ -136,6 +157,28 @@ class SyncViewModel @Inject constructor(
 
     fun updateJoinCode(code: String) {
         if (code.length <= 6 && code.all(Char::isDigit)) _state.value = _state.value.copy(joinCode = code)
+    }
+
+    fun refreshPairingCode() = viewModelScope.launch {
+        val device = deviceManager.ensureDevice()
+        val code = settingsRepository.getPairingCode()
+        pairingCode = code
+        _state.value = _state.value.copy(
+            pairingCode = code,
+            pairingPayload = "CASA|${device.householdId}|$code|${device.deviceId}",
+        )
+    }
+
+    fun updateDomesticWifiSsid(value: String) = viewModelScope.launch {
+        settingsRepository.update { it.copy(domesticWifiSsid = value.trim()) }
+        _state.value = _state.value.copy(domesticWifiSsid = value.trim(), message = "Red doméstica guardada")
+    }
+
+    fun refreshWifiState() {
+        _state.value = _state.value.copy(
+            currentWifiSsid = wifiNetworkPolicy.currentSsid(),
+            wifiConnected = wifiNetworkPolicy.isConnectedToWifi(),
+        )
     }
 
     fun renameDevice(value: String) = viewModelScope.launch {
@@ -179,7 +222,7 @@ class SyncViewModel @Inject constructor(
             .onSuccess {
                 pairingCode = _state.value.pairingCode
                 val device = deviceManager.ensureDevice()
-                _state.value = _state.value.copy(pairingPayload = "CASA|${device.householdId}|$pairingCode", message = "Código guardado")
+                _state.value = _state.value.copy(pairingPayload = "CASA|${device.householdId}|$pairingCode|${device.deviceId}", message = "Código guardado")
             }
             .onFailure { error -> _state.value = _state.value.copy(message = error.message ?: "Código no válido") }
     }
@@ -191,7 +234,7 @@ class SyncViewModel @Inject constructor(
         // Regeneration is the explicit action that permits previously revoked devices to re-pair.
         authorizedDeviceDao.clearRevokedForHousehold(device.householdId)
         pairingCode = code
-        _state.value = _state.value.copy(pairingCode = code, pairingPayload = "CASA|${device.householdId}|$code", message = "Código regenerado")
+        _state.value = _state.value.copy(pairingCode = code, pairingPayload = "CASA|${device.householdId}|$code|${device.deviceId}", message = "Código regenerado")
     }
 
     fun revokeDevice(deviceId: String) = viewModelScope.launch {

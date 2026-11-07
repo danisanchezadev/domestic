@@ -9,4 +9,9 @@ interface SettingsRepository {
     suspend fun setDarkMode(enabled: Boolean)
     suspend fun getPairingCode(): String
     suspend fun setPairingCode(code: String)
+    suspend fun isPairingCodeUsable(): Boolean
+    suspend fun recordPairingFailure()
+    suspend fun resetPairingAttempts()
+    suspend fun getSyncAuthToken(): String
+    suspend fun setSyncAuthToken(token: String)
 }
