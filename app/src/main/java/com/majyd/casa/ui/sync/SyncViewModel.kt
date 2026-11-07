@@ -33,6 +33,7 @@ data class SyncUiState(
     val devices: List<NearbyDevice> = emptyList(),
     val selectedDevice: NearbyDevice? = null,
     val pairingCode: String = "",
+    val joinCode: String = "",
     val pairingPayload: String = "",
     val joinPayload: String = "",
     val running: Boolean = false,
@@ -41,6 +42,7 @@ data class SyncUiState(
     val backupContent: String? = null,
     val backupExported: Boolean = false,
     val localDeviceId: String? = null,
+    val localDisplayName: String = "",
     val lastSyncAt: Long? = null,
     val phase: SyncPhase = SyncPhase.IDLE,
     val startedAt: Long? = null,
@@ -76,6 +78,7 @@ class SyncViewModel @Inject constructor(
             pairingCode = settingsRepository.getPairingCode()
             _state.value = _state.value.copy(
                 pairingCode = pairingCode,
+                localDisplayName = device.displayName,
                 pairingPayload = "CASA|${device.householdId}|$pairingCode",
                 localDeviceId = device.deviceId,
             )
@@ -131,6 +134,42 @@ class SyncViewModel @Inject constructor(
         }
     }
 
+    fun updateJoinCode(code: String) {
+        if (code.length <= 6 && code.all(Char::isDigit)) _state.value = _state.value.copy(joinCode = code)
+    }
+
+    fun renameDevice(value: String) = viewModelScope.launch {
+        val name = value.trim()
+        if (name.isBlank()) {
+            _state.value = _state.value.copy(message = "Escribe un nombre para este móvil")
+            return@launch
+        }
+        val device = deviceManager.renameDevice(name)
+        _state.value = _state.value.copy(localDisplayName = device.displayName, message = "Nombre guardado")
+    }
+
+    fun pairSelected() = viewModelScope.launch {
+        val peer = _state.value.selectedDevice ?: _state.value.devices.firstOrNull()
+        if (peer == null) {
+            _state.value = _state.value.copy(message = "No se encuentra el otro móvil en esta Wi-Fi")
+            return@launch
+        }
+        if (_state.value.joinCode.length != 6) {
+            _state.value = _state.value.copy(message = "Introduce un código de seis cifras")
+            return@launch
+        }
+        _state.value = _state.value.copy(running = true, phase = SyncPhase.AUTHENTICATING, message = "Verificando código y vinculando móviles")
+        runCatching {
+            syncCoordinator.pairDevice(peer, _state.value.joinCode) { progress -> updateProgress(progress) }
+        }.onSuccess {
+            _state.value = _state.value.copy(running = false, phase = SyncPhase.SUCCESS, finishedAt = System.currentTimeMillis(), message = "Vinculación completada")
+            _events.emit("Vinculación completada")
+        }.onFailure { error ->
+            _state.value = _state.value.copy(running = false, phase = SyncPhase.FAILED, message = error.message ?: "No se pudo vincular el móvil")
+            _events.emit(_state.value.message.orEmpty())
+        }
+    }
+
     fun updateJoinPayload(value: String) { _state.value = _state.value.copy(joinPayload = value) }
 
     fun showMessage(value: String) { _state.value = _state.value.copy(message = value) }
@@ -156,13 +195,13 @@ class SyncViewModel @Inject constructor(
     }
 
     fun revokeDevice(deviceId: String) = viewModelScope.launch {
-        if (!_state.value.backupExported) {
-            prepareBackup()
-            _state.value = _state.value.copy(message = "Exporta el backup antes de desvincular el dispositivo")
-            return@launch
-        }
+        unlinkDevice(deviceId)
+    }
+
+    fun unlinkDevice(deviceId: String) = viewModelScope.launch {
         authorizedDeviceDao.revoke(deviceId)
         _state.value = _state.value.copy(message = "Dispositivo desvinculado", backupExported = false)
+        _events.emit("Dispositivo desvinculado")
     }
 
     fun prepareBackup() = viewModelScope.launch {
@@ -228,7 +267,7 @@ class SyncViewModel @Inject constructor(
                 message = context.getString(R.string.sync_phase_discovering),
         )
         try {
-            val attempt = syncCoordinator.synchronizeManually { progress -> updateProgress(progress) }
+            val attempt = syncCoordinator.synchronizeManually(onProgress = { progress -> updateProgress(progress) })
             val message = if (attempt.phase == SyncPhase.NO_CHANGES) {
                 context.getString(R.string.sync_no_changes)
             } else {

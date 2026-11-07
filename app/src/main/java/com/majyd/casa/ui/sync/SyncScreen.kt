@@ -2,43 +2,56 @@ package com.majyd.casa.ui.sync
 
 import android.Manifest
 import android.content.pm.PackageManager
-import androidx.compose.foundation.clickable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.res.stringResource
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.majyd.casa.data.model.AppPreferences
+import kotlinx.coroutines.flow.collectLatest
 import java.text.DateFormat
 import java.util.Date
-import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,146 +63,149 @@ fun SyncScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    var showOptions by remember { mutableStateOf(false) }
+    var showQr by remember { mutableStateOf(false) }
+    var unlinkDevice by remember { mutableStateOf<String?>(null) }
+    var localName by remember(state.localDisplayName) { mutableStateOf(state.localDisplayName) }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) showQr = true else viewModel.showMessage("Necesito permiso de cámara para escanear el QR")
+    }
+    val linkedDevice = state.authorizedDevices.firstOrNull { it.deviceId != state.localDeviceId && !it.revoked }
+    val isLinked = linkedDevice != null
+    val remoteAvailable = linkedDevice?.let { remote -> state.devices.any { it.deviceId == remote.deviceId } } == true
+
     LaunchedEffect(Unit) {
-        viewModel.events.collectLatest { message -> snackbarHostState.showSnackbar(message) }
+        viewModel.events.collectLatest { snackbarHostState.showSnackbar(it) }
     }
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        state.backupContent?.let { content ->
-            val exported = context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) } != null
-            if (exported) viewModel.markBackupExported()
-        }
+    if (showQr) {
+        QrScannerDialog(
+            onResult = { value ->
+                parsePairingPayload(value)?.let { viewModel.updateJoinCode(it.pairingCode) }
+                    ?: viewModel.showMessage("El QR no pertenece a Domestic")
+                showQr = false
+            },
+            onDismiss = { showQr = false },
+        )
     }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        context.contentResolver.openInputStream(uri)?.use { viewModel.importBackup(it.readBytes().toString(Charsets.UTF_8)) }
+    unlinkDevice?.let { deviceId ->
+        AlertDialog(
+            onDismissRequest = { unlinkDevice = null },
+            title = { Text("Desvincular móvil") },
+            text = { Text("¿Quieres desvincular este móvil de la casa?") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.unlinkDevice(deviceId); unlinkDevice = null }) { Text("Desvincular") }
+            },
+            dismissButton = { TextButton(onClick = { unlinkDevice = null }) { Text("Cancelar") } },
+        )
     }
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        bitmap ?: return@rememberLauncherForActivityResult
-        decodePairingQr(bitmap)?.let(viewModel::updateJoinPayload)
-            ?: viewModel.showMessage(context.getString(com.majyd.casa.R.string.sync_qr_unreadable))
-    }
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) cameraLauncher.launch(null)
-        else viewModel.showMessage(context.getString(com.majyd.casa.R.string.sync_camera_permission))
-    }
-    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { contentPadding ->
-    Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
-        TopAppBar(title = { Text("Sincronizaci\u00f3n") })
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Sincronización") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Volver") } },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(vertical = 20.dp),
         ) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(com.majyd.casa.R.string.sync_status_title), style = MaterialTheme.typography.titleMedium)
-                        if (state.running) {
-                            CircularProgressIndicator()
-                        }
-                        Text(state.message ?: stringResource(com.majyd.casa.R.string.sync_phase_idle))
-                        state.remoteDevice?.let { Text(stringResource(com.majyd.casa.R.string.sync_device_label, it), style = MaterialTheme.typography.bodySmall) }
-                        if (state.finishedAt != null && !state.running) {
-                            Text(stringResource(com.majyd.casa.R.string.sync_counters, state.sent, state.acknowledged, state.received, state.applied), style = MaterialTheme.typography.bodySmall)
-                            state.durationMs?.let { Text(stringResource(com.majyd.casa.R.string.sync_duration, it / 1000), style = MaterialTheme.typography.bodySmall) }
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(if (isLinked) "Móvil vinculado" else "Sin vincular", style = MaterialTheme.typography.titleLarge)
+                        Text(if (isLinked) "Este móvil puede sincronizar los datos de la casa." else "Vincula este móvil con otro conectado a la misma Wi-Fi.")
+                        OutlinedTextField(
+                            value = localName,
+                            onValueChange = { localName = it },
+                            label = { Text("Nombre de este móvil") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Button(onClick = { viewModel.renameDevice(localName) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar nombre") }
+                        if (isLinked) {
+                            Text("Vinculado con ${linkedDevice?.displayName.orEmpty()}")
+                            Text(if (remoteAvailable) "Disponible en esta Wi-Fi" else "No disponible ahora")
+                            Text(
+                                state.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) } ?: "Aún no se ha sincronizado",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Button(onClick = viewModel::synchronizeAll, enabled = !state.running, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Sync, null)
+                                Text(if (state.running) "Sincronizando..." else "Sincronizar ahora", Modifier.padding(start = 8.dp))
+                            }
+                            OutlinedButton(onClick = { linkedDevice?.deviceId?.let { unlinkDevice = it } }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Desvincular dispositivo")
+                            }
+                        } else {
+                            Button(onClick = { showOptions = !showOptions }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Link, null)
+                                Text("Vincular otro móvil", Modifier.padding(start = 8.dp))
+                            }
                         }
                     }
                 }
             }
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Dispositivos cercanos", style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(com.majyd.casa.R.string.sync_same_home_only))
-                        Text(
-                            state.lastSyncAt?.let { stringResource(com.majyd.casa.R.string.sync_last_at, DateFormat.getDateTimeInstance().format(Date(it))) }
-                                ?: stringResource(com.majyd.casa.R.string.sync_last_never),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        OutlinedTextField(
-                            value = state.pairingCode,
-                            onValueChange = viewModel::updatePairingCode,
-                            label = { Text(stringResource(com.majyd.casa.R.string.sync_pairing_code_label)) },
-                            singleLine = true,
-                        )
-                        if (state.pairingPayload.isNotBlank()) {
-                            Image(
-                                bitmap = createPairingQr(state.pairingPayload).asImageBitmap(),
-                                contentDescription = stringResource(com.majyd.casa.R.string.sync_pairing_qr_description),
+            if (!isLinked && showOptions) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Unirse a una casa", style = MaterialTheme.typography.titleMedium)
+                            OutlinedButton(
+                                onClick = {
+                                    state.devices.firstOrNull()?.let(viewModel::select)
+                                        ?: viewModel.showMessage("No se encuentra el móvil anfitrión en esta Wi-Fi")
+                                },
+                                enabled = state.devices.isNotEmpty(),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Buscar en esta Wi-Fi") }
+                            OutlinedButton(
+                                onClick = {
+                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) showQr = true
+                                    else cameraPermission.launch(Manifest.permission.CAMERA)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Default.QrCode, null)
+                                Text("Escanear QR", Modifier.padding(start = 8.dp))
+                            }
+                            OutlinedTextField(
+                                value = state.joinCode,
+                                onValueChange = viewModel::updateJoinCode,
+                                label = { Text("Código de seis cifras") },
+                                singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                        }
-                        Button(onClick = viewModel::savePairingCode) { Text(stringResource(com.majyd.casa.R.string.sync_save_code)) }
-                        Button(onClick = viewModel::regeneratePairingCode) { Text(stringResource(com.majyd.casa.R.string.sync_regenerate_code)) }
-                        Button(onClick = { viewModel.prepareBackup() }) { Text(stringResource(com.majyd.casa.R.string.sync_prepare_backup)) }
-                        if (state.backupContent != null) {
-                            Button(onClick = { exportLauncher.launch("casa-backup.bin") }) { Text(stringResource(com.majyd.casa.R.string.sync_export_backup)) }
-                        }
-                        Button(onClick = { importLauncher.launch(arrayOf("application/octet-stream", "text/plain")) }) { Text(stringResource(com.majyd.casa.R.string.sync_import_backup)) }
-                        OutlinedTextField(
-                            value = state.joinPayload,
-                            onValueChange = viewModel::updateJoinPayload,
-                            label = { Text(stringResource(com.majyd.casa.R.string.sync_join_payload_label)) },
-                            singleLine = true,
-                        )
-                        Button(onClick = {
-                            if (context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                                cameraLauncher.launch(null)
-                            } else {
-                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                            }
-                        }) { Text(stringResource(com.majyd.casa.R.string.sync_read_qr)) }
-                        Button(onClick = viewModel::joinFromPayload) { Text(stringResource(com.majyd.casa.R.string.sync_join_home)) }
-                        if (state.devices.isEmpty()) Text(stringResource(com.majyd.casa.R.string.sync_searching_devices))
-                    }
-                }
-            }
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Dispositivos vinculados", style = MaterialTheme.typography.titleMedium)
-                        state.authorizedDevices.forEach { device ->
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(device.displayName)
-                                Text(stringResource(com.majyd.casa.R.string.sync_last_connection, DateFormat.getDateTimeInstance().format(Date(device.lastSeenAt))), style = MaterialTheme.typography.bodySmall)
-                                Button(
-                                    onClick = { viewModel.revokeDevice(device.deviceId) },
-                                    enabled = device.deviceId != state.localDeviceId,
-                                ) {
-                                    Text(stringResource(com.majyd.casa.R.string.sync_unlink))
+                            Button(onClick = viewModel::pairSelected, enabled = !state.running && state.joinCode.length == 6, modifier = Modifier.fillMaxWidth()) { Text("Conectar") }
+                            if (state.devices.isNotEmpty()) {
+                                Text("Móviles encontrados", style = MaterialTheme.typography.titleSmall)
+                                state.devices.forEach { device ->
+                                    Card(Modifier.fillMaxWidth().clickable { viewModel.select(device) }) {
+                                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(device.serviceName, Modifier.weight(1f))
+                                            if (state.selectedDevice?.serviceName == device.serviceName) Text("Seleccionado")
+                                        }
+                                    }
                                 }
-                            }
+                            } else Text("Espera unos segundos mientras se buscan móviles en esta Wi-Fi.")
+                        }
+                    }
+                }
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Crear una casa", style = MaterialTheme.typography.titleMedium)
+                            Text("Comparte este código con el otro móvil")
+                            Text(state.pairingCode, style = MaterialTheme.typography.displaySmall)
+                            if (state.pairingPayload.isNotBlank()) Image(createPairingQr(state.pairingPayload).asImageBitmap(), "Código QR", Modifier.fillMaxWidth())
                         }
                     }
                 }
             }
-            items(state.devices, key = { it.deviceId ?: it.serviceName }) { device ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.select(device) },
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(device.serviceName, style = MaterialTheme.typography.titleMedium)
-                        Text("${device.host}:${device.port}")
-                        if (state.selectedDevice?.serviceName == device.serviceName) Text(stringResource(com.majyd.casa.R.string.sync_selected))
-                    }
-                }
-            }
-            item {
-                Button(
-                    onClick = viewModel::synchronizeAll,
-                    enabled = !state.running,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (state.running) stringResource(com.majyd.casa.R.string.sync_running) else stringResource(com.majyd.casa.R.string.sync_retry))
-                }
-            }
-            state.message?.let { message -> item { Text(message) } }
-            item { Button(onClick = onBack) { Text(stringResource(com.majyd.casa.R.string.sync_close)) } }
+            state.message?.let { message -> item { Text(message, style = MaterialTheme.typography.bodyMedium) } }
         }
-    }
     }
 }

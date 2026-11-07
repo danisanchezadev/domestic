@@ -7,6 +7,7 @@ import com.majyd.casa.data.local.entities.AuthorizedDeviceEntity
 import com.majyd.casa.sync.transport.LocalWifiTransport
 import com.majyd.casa.sync.transport.NsdDeviceDiscovery
 import com.majyd.casa.sync.transport.NearbyDevice
+import com.majyd.casa.sync.transport.TransportPhase
 import com.majyd.casa.sync.transport.WifiNetworkPolicy
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -141,13 +142,17 @@ class SyncCoordinator @Inject constructor(
                 try {
                     discovery.discover().collectLatest { devices ->
                         val current = deviceManager.ensureDevice()
-                        val peers = devices.filter {
+                        val visiblePeers = devices.filter {
+                            it.host.isNotBlank() &&
+                                it.deviceId != current.deviceId
+                        }
+                        _nearbyDevices.value = visiblePeers
+                        val peers = visiblePeers.filter {
                             it.householdId == current.householdId &&
                                 wifiNetworkPolicy.isAllowed(settingsRepository.preferences.first().domesticWifiSsid) &&
                                 it.host.isNotBlank() &&
                                 it.deviceId != current.deviceId
                         }
-                        _nearbyDevices.value = peers
                         peers.forEach { peer ->
                             mutex.withLock {
                                 try {
@@ -187,7 +192,7 @@ class SyncCoordinator @Inject constructor(
         }
     }
 
-    suspend fun synchronizeManually(onProgress: (SyncProgress) -> Unit = {}): SyncAttemptResult {
+    suspend fun synchronizeManually(preferredDevice: NearbyDevice? = null, onProgress: (SyncProgress) -> Unit = {}): SyncAttemptResult {
         val startedAt = System.currentTimeMillis()
         val current = deviceManager.ensureDevice()
         shoppingRepository.ensureCatalogSyncOperations()
@@ -197,11 +202,8 @@ class SyncCoordinator @Inject constructor(
         return mutex.withLock {
             onProgress(SyncProgress(SyncPhase.DISCOVERING))
             val peer = try {
-                withTimeout(DISCOVERY_TIMEOUT_MS) {
-                    nearbyDevices
-                        .filter { it.isNotEmpty() }
-                        .first()
-                        .first()
+                preferredDevice ?: withTimeout(DISCOVERY_TIMEOUT_MS) {
+                    nearbyDevices.filter { it.isNotEmpty() }.first().first { it.householdId == current.householdId }
                 }
             } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
                 throw SyncFailureException(SyncError.DeviceNotFound, error)
@@ -239,6 +241,38 @@ class SyncCoordinator @Inject constructor(
         }
     }
 
+    suspend fun pairDevice(peer: NearbyDevice, pairingCode: String, onProgress: (SyncProgress) -> Unit = {}): SyncResult {
+        val code = pairingCode.trim()
+        require(code.length == 6 && code.all(Char::isDigit)) { "Código de vinculación incorrecto" }
+        if (!wifiNetworkPolicy.isAllowed(settingsRepository.preferences.first().domesticWifiSsid)) {
+            throw SyncFailureException(SyncError.NetworkUnavailable)
+        }
+        return mutex.withLock {
+            val current = deviceManager.ensureDevice()
+            onProgress(SyncProgress(SyncPhase.CONNECTING, remoteDevice = peer.serviceName))
+            val incoming = transport.exchange(
+                peer.host,
+                peer.port,
+                code,
+                emptyList(),
+                current.deviceId,
+            ) { phase ->
+                onProgress(SyncProgress(phase.toSyncPhaseForPairing(), remoteDevice = peer.serviceName))
+            }
+            val householdId = peer.householdId ?: incoming.firstOrNull()?.householdId
+                ?: throw SyncFailureException(SyncError.HouseholdMismatch)
+            onProgress(SyncProgress(SyncPhase.SYNCHRONIZING, remoteDevice = peer.serviceName, received = incoming.size))
+            deviceManager.joinHousehold(householdId)
+            settingsRepository.setPairingCode(code)
+            incoming.filterNot { it.applied }.forEach { operation ->
+                if (!syncSession.applyIncoming(operation)) throw SyncFailureException(SyncError.DatabaseApplyError)
+            }
+            authorizedDeviceDao.upsert(AuthorizedDeviceEntity(current.deviceId, householdId, current.displayName, System.currentTimeMillis()))
+            authorizedDeviceDao.upsert(AuthorizedDeviceEntity(peer.deviceId ?: peer.serviceName, householdId, peer.serviceName, System.currentTimeMillis()))
+            SyncResult(0, 0, incoming.count { !it.applied }, incoming.count { !it.applied })
+        }
+    }
+
     suspend fun synchronizeAutomatically(): Boolean {
         return try {
             val current = deviceManager.ensureDevice()
@@ -260,6 +294,12 @@ class SyncCoordinator @Inject constructor(
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun TransportPhase.toSyncPhaseForPairing(): SyncPhase = when (this) {
+        TransportPhase.CONNECTING -> SyncPhase.CONNECTING
+        TransportPhase.AUTHENTICATING -> SyncPhase.AUTHENTICATING
+        TransportPhase.SYNCHRONIZING -> SyncPhase.SYNCHRONIZING
     }
 
     companion object {
