@@ -134,6 +134,19 @@ fun CalendarScreen(
             date = date,
             occurrences = state.occurrences.filter { it.occurrenceDate == date },
             onOpen = { selectedOccurrence = it; selectedDay = null },
+            onEdit = { occurrence ->
+                if (occurrence.source.recurrenceType == CalendarRecurrenceType.NONE) {
+                    viewModel.editEvent(occurrence.source)
+                } else {
+                    viewModel.editOccurrence(occurrence)
+                }
+                selectedDay = null
+                draftOpen = true
+            },
+            onDelete = { occurrence ->
+                viewModel.deleteEventPermanently(occurrence.source)
+                selectedDay = null
+            },
             onDismiss = { selectedDay = null },
         )
     }
@@ -202,6 +215,8 @@ private fun CalendarDayDialog(
     date: LocalDate,
     occurrences: List<com.majyd.casa.data.model.CalendarOccurrence>,
     onOpen: (com.majyd.casa.data.model.CalendarOccurrence) -> Unit,
+    onEdit: (com.majyd.casa.data.model.CalendarOccurrence) -> Unit,
+    onDelete: (com.majyd.casa.data.model.CalendarOccurrence) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -218,6 +233,12 @@ private fun CalendarDayDialog(
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(occurrence.source.title, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                                 Text(if (occurrence.source.allDay) "Todo el día" else formatOccurrenceTime(occurrence), fontWeight = FontWeight.Bold)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    FilledTonalButton(onClick = { onEdit(occurrence) }) { Text("Editar", fontWeight = FontWeight.ExtraBold) }
+                                    IconButton(onClick = { onDelete(occurrence) }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
                             }
                         }
                     }

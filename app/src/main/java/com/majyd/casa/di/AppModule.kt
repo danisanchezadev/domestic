@@ -16,6 +16,8 @@ import com.majyd.casa.data.repository.RoomShoppingRepository
 import com.majyd.casa.data.repository.RoomTaskRepository
 import com.majyd.casa.data.repository.RoomWeeklyMenuRepository
 import com.majyd.casa.data.repository.RoomDishRepository
+import com.majyd.casa.data.repository.EconomyRepository
+import com.majyd.casa.data.repository.RoomEconomyRepository
 import com.majyd.casa.data.repository.ShoppingRepository
 import com.majyd.casa.data.repository.TaskRepository
 import com.majyd.casa.data.repository.WeeklyMenuRepository
@@ -133,6 +135,10 @@ object AppProvidesModule {
     fun provideDishDao(database: CasaDatabase) = database.dishDao()
 
     @Provides
+    @Singleton
+    fun provideEconomyDao(database: CasaDatabase) = database.economyDao()
+
+    @Provides
     fun provideMenuTemplateDao(database: CasaDatabase) = database.menuTemplateDao()
 
     @Provides
@@ -240,6 +246,10 @@ abstract class AppBindModule {
     abstract fun bindDishRepository(
         impl: RoomDishRepository,
     ): DishRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindEconomyRepository(impl: RoomEconomyRepository): EconomyRepository
 
     @Binds
     @Singleton

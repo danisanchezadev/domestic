@@ -19,6 +19,7 @@ import com.majyd.casa.ui.calendar.CalendarScreen
 import com.majyd.casa.ui.weeklymenu.WeeklyMenuScreen
 import com.majyd.casa.ui.dishes.DishesScreen
 import com.majyd.casa.ui.contacts.ContactsScreen
+import com.majyd.casa.ui.economy.EconomyScreen
 
 @Composable
 fun CasaNavHost(
@@ -67,6 +68,9 @@ fun CasaNavHost(
         composable(AppDestination.Contacts.route) {
             ContactsScreen(onBack = { navController.popBackStack() })
         }
+        composable(AppDestination.Economy.route) {
+            EconomyScreen(onBack = { navController.popBackStack() })
+        }
         composable(AppDestination.Sync.route) {
             SyncScreen(
                 preferences = preferences,
@@ -93,6 +97,7 @@ fun CasaNavHost(
             AppDestination.Dishes,
             AppDestination.RecipeBook,
             AppDestination.Contacts,
+            AppDestination.Economy,
             AppDestination.Sync,
             AppDestination.Settings,
             AppDestination.Search,

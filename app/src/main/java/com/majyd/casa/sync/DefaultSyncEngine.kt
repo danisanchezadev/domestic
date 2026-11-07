@@ -15,6 +15,7 @@ class DefaultSyncEngine @Inject constructor(
     private val weeklyMenuSyncApplier: WeeklyMenuSyncApplier,
     private val menuTemplateSyncApplier: MenuTemplateSyncApplier,
     private val menuHistorySyncApplier: MenuHistorySyncApplier,
+    private val economySyncApplier: EconomySyncApplier,
 ) : SyncEngine {
     override suspend fun apply(operation: SyncOperation): Boolean {
         return when (operation.entityType) {
@@ -28,6 +29,7 @@ class DefaultSyncEngine @Inject constructor(
             "weekly_menu_item" -> weeklyMenuSyncApplier.apply(operation)
             "menu_template", "menu_template_item" -> menuTemplateSyncApplier.apply(operation)
             "menu_history_item" -> menuHistorySyncApplier.apply(operation)
+            "economy_category", "economy_movement", "economy_target" -> economySyncApplier.apply(operation)
             else -> false
         }
     }

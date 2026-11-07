@@ -10,6 +10,10 @@ import com.majyd.casa.data.local.entities.DishIngredientEntity
 import com.majyd.casa.data.local.entities.WeeklyMenuItemEntity
 import com.majyd.casa.data.repository.RoomDeviceRepository
 import com.majyd.casa.data.repository.RoomShoppingRepository
+import com.majyd.casa.data.model.MealSlot
+import com.majyd.casa.data.model.TaskItem
+import com.majyd.casa.notifications.NotificationScheduler
+import java.time.LocalDate
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -40,7 +44,17 @@ class WeeklyMenuSyncApplierTest {
             syncOperationRepository = operationRepository,
             deviceManager = deviceManager,
         )
-        applier = WeeklyMenuSyncApplier(database, operationRepository, shoppingRepository)
+        applier = WeeklyMenuSyncApplier(
+            database,
+            operationRepository,
+            shoppingRepository,
+            object : NotificationScheduler {
+                override fun schedule(task: TaskItem) = Unit
+                override fun cancel(taskId: String) = Unit
+                override fun schedulePreparation(menuItemId: String, dishName: String, date: LocalDate, mealSlot: MealSlot) = Unit
+                override fun cancelPreparation(menuItemId: String) = Unit
+            },
+        )
     }
 
     @After

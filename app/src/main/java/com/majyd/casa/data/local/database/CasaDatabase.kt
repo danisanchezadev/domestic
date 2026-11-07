@@ -42,6 +42,10 @@ import com.majyd.casa.data.local.entities.MenuHistoryItemEntity
 import com.majyd.casa.data.local.entities.RecipeCategoryEntity
 import com.majyd.casa.data.local.entities.RecipeCategoryLinkEntity
 import com.majyd.casa.data.local.dao.RecipeCategoryDao
+import com.majyd.casa.data.local.dao.EconomyDao
+import com.majyd.casa.data.local.entities.EconomyCategoryEntity
+import com.majyd.casa.data.local.entities.EconomyMovementEntity
+import com.majyd.casa.data.local.entities.EconomyMonthlyTargetEntity
 
 @Database(
     entities = [
@@ -74,8 +78,11 @@ import com.majyd.casa.data.local.dao.RecipeCategoryDao
         MenuHistoryItemEntity::class,
         RecipeCategoryEntity::class,
         RecipeCategoryLinkEntity::class,
+        EconomyCategoryEntity::class,
+        EconomyMovementEntity::class,
+        EconomyMonthlyTargetEntity::class,
     ],
-    version = 38,
+    version = 39,
     exportSchema = true,
 )
 abstract class CasaDatabase : RoomDatabase() {
@@ -100,4 +107,5 @@ abstract class CasaDatabase : RoomDatabase() {
     abstract fun menuTemplateDao(): com.majyd.casa.data.local.dao.MenuTemplateDao
     abstract fun menuHistoryDao(): com.majyd.casa.data.local.dao.MenuHistoryDao
     abstract fun recipeCategoryDao(): RecipeCategoryDao
+    abstract fun economyDao(): EconomyDao
 }

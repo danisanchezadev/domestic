@@ -500,6 +500,20 @@ val MIGRATION_37_38 = object : Migration(37, 38) {
     }
 }
 
+val MIGRATION_38_39 = object : Migration(38, 39) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS economy_categories (id TEXT NOT NULL, householdId TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL, normalizedName TEXT NOT NULL, deleted INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(id))")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_economy_categories_householdId_normalizedName_type ON economy_categories(householdId, normalizedName, type)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_economy_categories_householdId ON economy_categories(householdId)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS economy_movements (id TEXT NOT NULL, householdId TEXT NOT NULL, type TEXT NOT NULL, amountCents INTEGER NOT NULL, categoryId TEXT NOT NULL, dateEpochDay INTEGER NOT NULL, deleted INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(id))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_economy_movements_householdId ON economy_movements(householdId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_economy_movements_dateEpochDay ON economy_movements(dateEpochDay)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_economy_movements_categoryId ON economy_movements(categoryId)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS economy_monthly_targets (householdId TEXT NOT NULL, monthKey TEXT NOT NULL, targetCents INTEGER NOT NULL, minimumCents INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL, updatedByDevice TEXT NOT NULL, PRIMARY KEY(householdId, monthKey))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_economy_monthly_targets_householdId ON economy_monthly_targets(householdId)")
+    }
+}
+
 private fun normalizeDishesTable(db: SupportSQLiteDatabase) {
     // Rebuild the table so SQLite does not retain migration-only defaults
     // that Room does not declare in DishEntity.
@@ -512,4 +526,4 @@ private fun normalizeDishesTable(db: SupportSQLiteDatabase) {
     db.execSQL("CREATE INDEX IF NOT EXISTS index_dishes_collection ON dishes (collection)")
 }
 
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38)
+val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
