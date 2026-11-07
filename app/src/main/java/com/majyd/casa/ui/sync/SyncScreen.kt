@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -42,7 +40,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -64,14 +61,12 @@ fun SyncScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showOptions by remember { mutableStateOf(false) }
-    var showHostQr by remember { mutableStateOf(false) }
-    var showQr by remember { mutableStateOf(false) }
     var unlinkDevice by remember { mutableStateOf<String?>(null) }
     var localName by remember(state.localDisplayName) { mutableStateOf(state.localDisplayName) }
-    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) showQr = true else viewModel.showMessage("Necesito permiso de cámara para escanear el QR")
+    var wifiDraft by remember(state.domesticWifiSsid) { mutableStateOf(state.domesticWifiSsid) }
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        viewModel.refreshWifiState()
     }
-    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { viewModel.refreshWifiState() }
     val linkedDevice = state.authorizedDevices.firstOrNull { it.deviceId != state.localDeviceId && !it.revoked }
     val isLinked = linkedDevice != null
     val remoteAvailable = linkedDevice?.let { remote -> state.devices.any { it.deviceId == remote.deviceId } } == true
@@ -80,19 +75,7 @@ fun SyncScreen(
         viewModel.events.collectLatest { snackbarHostState.showSnackbar(it) }
     }
     LaunchedEffect(Unit) { viewModel.refreshWifiState() }
-    if (showQr) {
-        QrScannerDialog(
-            onResult = { value ->
-                parsePairingPayload(value)?.let {
-                    viewModel.updateJoinCode(it.pairingCode)
-                    viewModel.selectDeviceById(it.deviceId)
-                }
-                    ?: viewModel.showMessage("El QR no pertenece a Domestic")
-                showQr = false
-            },
-            onDismiss = { showQr = false },
-        )
-    }
+
     unlinkDevice?.let { deviceId ->
         AlertDialog(
             onDismissRequest = { unlinkDevice = null },
@@ -126,12 +109,17 @@ fun SyncScreen(
                         Text(if (isLinked) "Este móvil puede sincronizar los datos de la casa." else "Vincula este móvil con otro conectado a la misma Wi-Fi.")
                         Text("Red doméstica", style = MaterialTheme.typography.titleMedium)
                         OutlinedTextField(
-                            value = state.domesticWifiSsid,
-                            onValueChange = viewModel::updateDomesticWifiSsid,
+                            value = wifiDraft,
+                            onValueChange = { wifiDraft = it },
                             label = { Text("SSID de la Wi-Fi permitida") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        Button(
+                            onClick = { viewModel.updateDomesticWifiSsid(wifiDraft) },
+                            enabled = wifiDraft != state.domesticWifiSsid,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Guardar red") }
                         Text(
                             when {
                                 !state.wifiConnected -> "No estás conectado a una red Wi-Fi"
@@ -187,20 +175,10 @@ fun SyncScreen(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Vincular otro móvil", style = MaterialTheme.typography.titleMedium)
-                            OutlinedButton(onClick = {
-                                showHostQr = !showHostQr
-                                if (showHostQr) viewModel.refreshPairingCode()
-                            }, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.QrCode, null)
-                                Text(if (showHostQr) "Ocultar mi QR" else "Mostrar mi QR", Modifier.padding(start = 8.dp))
-                            }
-                            if (showHostQr) {
-                                Text("El otro móvil debe estar conectado a esta misma Wi-Fi")
-                                Text(state.pairingCode, style = MaterialTheme.typography.displaySmall)
-                                Text("Este código caduca en 15 minutos y se bloquea tras 5 intentos fallidos.", style = MaterialTheme.typography.bodySmall)
-                                TextButton(onClick = viewModel::regeneratePairingCode) { Text("Generar otro código") }
-                                if (state.pairingPayload.isNotBlank()) Image(createPairingQr(state.pairingPayload).asImageBitmap(), "Código QR", Modifier.fillMaxWidth())
-                            }
+                            Text("En el móvil anfitrión aparece un código de seis cifras. Ambos móviles deben estar conectados a la misma Wi-Fi.")
+                            Text(state.pairingCode, style = MaterialTheme.typography.displaySmall)
+                            Text("Este código caduca en 15 minutos y se bloquea tras 5 intentos fallidos.", style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = viewModel::regeneratePairingCode) { Text("Generar otro código") }
                             OutlinedButton(
                                 onClick = {
                                     state.devices.firstOrNull()?.let(viewModel::select)
@@ -209,16 +187,6 @@ fun SyncScreen(
                                 enabled = state.devices.isNotEmpty(),
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Buscar en esta Wi-Fi") }
-                            OutlinedButton(
-                                onClick = {
-                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) showQr = true
-                                    else cameraPermission.launch(Manifest.permission.CAMERA)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(Icons.Default.QrCode, null)
-                                Text("Escanear QR", Modifier.padding(start = 8.dp))
-                            }
                             OutlinedTextField(
                                 value = state.joinCode,
                                 onValueChange = viewModel::updateJoinCode,

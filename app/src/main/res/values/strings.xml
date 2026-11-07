@@ -10,7 +10,6 @@
     <string name="sync_device_unlinked">Dispositivo desvinculado</string>
     <string name="sync_backup_exported">Backup exportado</string>
     <string name="sync_backup_restored">Backup restaurado</string>
-    <string name="sync_invalid_pairing">QR o código de emparejamiento no válido</string>
     <string name="sync_home_linked">Hogar vinculado</string>
     <string name="sync_phase_discovering">Buscando el otro dispositivo…</string>
     <string name="sync_phase_connecting">Conectando con el otro dispositivo…</string>
@@ -37,14 +36,11 @@
     <string name="sync_last_at">Última sincronización: %1$s</string>
     <string name="sync_last_never">Última sincronización: nunca</string>
     <string name="sync_pairing_code_label">Código de emparejamiento</string>
-    <string name="sync_pairing_qr_description">Código QR de emparejamiento</string>
     <string name="sync_save_code">Guardar código</string>
     <string name="sync_regenerate_code">Regenerar código</string>
     <string name="sync_prepare_backup">Preparar backup cifrado</string>
     <string name="sync_export_backup">Exportar backup</string>
     <string name="sync_import_backup">Importar backup</string>
-    <string name="sync_join_payload_label">Pegar payload del QR para unirse</string>
-    <string name="sync_read_qr">Leer QR con cámara</string>
     <string name="sync_join_home">Unirse al hogar</string>
     <string name="sync_searching_devices">Buscando dispositivos…</string>
     <string name="sync_last_connection">Última conexión: %1$s</string>
@@ -56,8 +52,6 @@
     <string name="sync_device_label">Dispositivo: %1$s</string>
     <string name="sync_counters">Enviados: %1$d | Confirmados: %2$d | Recibidos: %3$d | Aplicados: %4$d</string>
     <string name="sync_duration">Duración aproximada: %1$ds</string>
-    <string name="sync_qr_unreadable">No se pudo leer el código QR.</string>
-    <string name="sync_camera_permission">Se necesita permiso de cámara para leer el QR.</string>
     <string name="sync_no_changes">Todo está actualizado. No había cambios pendientes.</string>
     <string name="sync_success_changes">Sincronización completada correctamente. Se enviaron %1$d cambios y se recibieron %2$d.</string>
     <string name="sync_cancelled_result">Sincronización cancelada.</string>

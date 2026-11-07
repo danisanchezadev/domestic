@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -163,7 +164,7 @@ private fun SettingsMenu(onSelect: (SettingsSection) -> Unit, onOpenSync: () -> 
     ) {
         SettingMenuCard("Grupos", "Personas y grupos", Icons.Filled.Group) { onSelect(SettingsSection.GROUPS) }
         SettingMenuCard("Hogar", "Personas y grupos", Icons.Filled.Home) { onSelect(SettingsSection.HOUSEHOLD) }
-        SettingMenuCard("Union de dispositivos", "Wi-Fi, QR y sincronizacion", Icons.Filled.Wifi) { onOpenSync() }
+        SettingMenuCard("Union de dispositivos", "Wi-Fi y sincronizacion", Icons.Filled.Wifi) { onOpenSync() }
         SettingMenuCard("Nombre de la casa", "Identidad del hogar", Icons.Filled.Home) { onSelect(SettingsSection.HOME_NAME) }
         SettingMenuCard("Apariencia", "Colores y modo oscuro", Icons.Filled.Palette) { onSelect(SettingsSection.APPEARANCE) }
         SettingMenuCard("Tarjetas resumen", "Orden y visibilidad", Icons.Filled.Tune) { onSelect(SettingsSection.DASHBOARD) }
@@ -200,7 +201,7 @@ private fun GroupsSection(
     onDeleteGroup: (String) -> Unit,
 ) {
     household.groups.forEach { group ->
-        var groupName by remember(group.id, group.name) { mutableStateOf(group.name) }
+        var groupName by rememberSaveable(group.id) { mutableStateOf(group.name) }
         Card {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(groupName, { groupName = it.take(MAX_GROUP_NAME_LENGTH) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Nombre del grupo") })
@@ -239,9 +240,8 @@ private fun HouseholdSection(
 ) {
     Card {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Identificador: ${household.householdId}", style = MaterialTheme.typography.bodySmall)
             household.people.forEach { person ->
-                var personName by remember(person.id, person.name) { mutableStateOf(person.name) }
+                var personName by rememberSaveable(person.id) { mutableStateOf(person.name) }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedTextField(personName, { personName = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Nombre de la persona") })
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -260,17 +260,23 @@ private fun HouseholdSection(
 
 @Composable
 private fun HomeNameSection(homeName: String, onHomeNameChange: (String) -> Unit) {
+    var draft by rememberSaveable { mutableStateOf(homeName) }
     Card {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("El nombre se muestra en la cabecera principal.", style = MaterialTheme.typography.bodyMedium)
             OutlinedTextField(
-                value = homeName,
-                onValueChange = { onHomeNameChange(it.take(18)) },
+                value = draft,
+                onValueChange = { draft = it.take(18) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 supportingText = { Text("Maximo 18 caracteres") },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             )
+            Button(
+                onClick = { onHomeNameChange(draft) },
+                enabled = draft != homeName,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Guardar nombre") }
         }
     }
 }
