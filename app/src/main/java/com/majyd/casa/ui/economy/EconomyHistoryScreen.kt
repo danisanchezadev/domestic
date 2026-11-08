@@ -34,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.majyd.casa.data.model.EconomyMovement
@@ -223,6 +225,20 @@ private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, t
             fun yFor(value: Long): Float = baseline - (value.toFloat() / totalRange) * size.height
             if (target != 0L) drawLine(Color(0xFF244C35), androidx.compose.ui.geometry.Offset(0f, yFor(target)), androidx.compose.ui.geometry.Offset(size.width, yFor(target)), 2f)
             if (minimum != 0L && minimum != target) drawLine(Color(0xFFD39A2C), androidx.compose.ui.geometry.Offset(0f, yFor(minimum)), androidx.compose.ui.geometry.Offset(size.width, yFor(minimum)), 2f)
+            drawIntoCanvas { canvas ->
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = android.graphics.Color.DKGRAY
+                    textSize = 11.dp.toPx()
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                }
+                canvas.nativeCanvas.drawText("0 €", 4f, baseline - 4f, paint)
+                if (target == minimum && target != 0L) {
+                    canvas.nativeCanvas.drawText("Objetivo/mínimo ${EconomyViewModel.formatCents(target)}", 4f, yFor(target) - 4f, paint)
+                } else {
+                    if (target != 0L) canvas.nativeCanvas.drawText("Objetivo ${EconomyViewModel.formatCents(target)}", 4f, yFor(target) - 4f, paint)
+                    if (minimum != 0L) canvas.nativeCanvas.drawText("Mínimo ${EconomyViewModel.formatCents(minimum)}", 4f, yFor(minimum) - 4f, paint)
+                }
+            }
             groups.entries.forEachIndexed { index, entry ->
                 if (entry.key > YearMonth.now() && entry.value.isEmpty()) return@forEachIndexed
                 val amount = monthlySavings(entry.value)

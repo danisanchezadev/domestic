@@ -3,7 +3,6 @@ package com.majyd.casa.ui.economy
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,6 +49,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.majyd.casa.data.model.EconomyCategory
 import com.majyd.casa.data.model.EconomyCalculations
@@ -71,10 +72,12 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     var pendingDelete by remember { mutableStateOf<EconomyMovement?>(null) }
     var selectedMonth by remember { mutableStateOf(YearMonth.now()) }
     var today by remember { mutableStateOf(LocalDate.now()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { today = LocalDate.now() }
     LaunchedEffect(Unit) {
         while (true) {
             today = LocalDate.now()
-            delay(60_000)
+            val nextDay = today.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
+            delay(java.time.Duration.between(java.time.Instant.now(), nextDay).toMillis().coerceAtLeast(1_000L))
         }
     }
     LaunchedEffect(selectedMonth) { viewModel.loadTarget(selectedMonth) }
@@ -138,7 +141,7 @@ private fun EconomyLiquidityBar(income: Long, balance: Long, target: Long, minim
             Canvas(Modifier.fillMaxWidth().height(42.dp)) {
                 val safeIncome = income.coerceAtLeast(1L).toFloat()
                 val positiveScale = (balance.coerceAtLeast(0L).toFloat() / safeIncome).coerceIn(0f, 1f)
-                val negativeScale = if (balance < 0L) (kotlin.math.abs(balance).toFloat() / safeIncome).coerceIn(0f, 1f) else 0f
+                val negativeScale = EconomyCalculations.negativeLiquidityScale(balance)
                 if (balance >= 0L) {
                     drawRoundRect(Color(0xFFE3E8E2), cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f, 12f))
                     drawRoundRect(status, size = androidx.compose.ui.geometry.Size(size.width * positiveScale, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f, 12f))

@@ -117,14 +117,15 @@ class CasaMigrationTest {
             execSQL("INSERT INTO economy_settings (householdId, fiscalStartMonth, currency, updatedAt, version, updatedByDevice) VALUES ('house-41', 4, 'EUR', 10, 1, 'device-41')")
             execSQL("INSERT INTO economy_monthly_targets (householdId, monthKey, targetCents, minimumCents, createdAt, updatedAt, version, updatedByDevice) VALUES ('house-41', '2026-01', 10000, 5000, 1, 20, 1, 'device-41')")
             execSQL("INSERT INTO economy_monthly_targets (householdId, monthKey, targetCents, minimumCents, createdAt, updatedAt, version, updatedByDevice) VALUES ('house-41', '2026-02', 20000, 8000, 1, 30, 2, 'device-41')")
+            execSQL("INSERT INTO economy_monthly_targets (householdId, monthKey, targetCents, minimumCents, createdAt, updatedAt, version, updatedByDevice) VALUES ('house-41', '2026-03', 30000, 9000, 1, 30, 3, 'device-41')")
             close()
         }
         helper.runMigrationsAndValidate(ROOM41_SETTINGS_DB_NAME, 42, true, *ALL_MIGRATIONS).use { database ->
             database.query("SELECT fiscalStartMonth, targetCents, minimumCents FROM economy_settings WHERE householdId = 'house-41'").use { cursor ->
                 cursor.moveToFirst()
                 assertEquals(4, cursor.getInt(0))
-                assertEquals(20000L, cursor.getLong(1))
-                assertEquals(8000L, cursor.getLong(2))
+                assertEquals(30000L, cursor.getLong(1))
+                assertEquals(9000L, cursor.getLong(2))
             }
         }
     }

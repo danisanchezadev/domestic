@@ -2,6 +2,7 @@ package com.majyd.casa.ui.economy
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.majyd.casa.data.model.EconomyCalculations
 import com.majyd.casa.data.model.EconomyMovement
@@ -53,5 +54,19 @@ class EconomyViewModelTest {
         )
 
         assertEquals(-1_000L, totals.liquidityCents)
+    }
+
+    @Test
+    fun negativeLiquidityScaleGrowsWithoutSaturatingAtIncome() {
+        val small = EconomyCalculations.negativeLiquidityScale(-1_000L)
+        val large = EconomyCalculations.negativeLiquidityScale(-100_000L)
+        val veryLarge = EconomyCalculations.negativeLiquidityScale(-1_000_000L)
+
+        assertEquals(0f, EconomyCalculations.negativeLiquidityScale(0L))
+        assertEquals(0f, EconomyCalculations.negativeLiquidityScale(1_000L))
+        assertTrue(small > 0f)
+        assertTrue(small < large)
+        assertTrue(large < veryLarge)
+        assertTrue(veryLarge < 1f)
     }
 }
