@@ -62,6 +62,7 @@ fun SyncScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showOptions by remember { mutableStateOf(false) }
     var unlinkDevice by remember { mutableStateOf<String?>(null) }
+    var newProfileName by remember { mutableStateOf("") }
     var localName by remember(state.localDisplayName) { mutableStateOf(state.localDisplayName) }
     var wifiDraft by remember(state.domesticWifiSsid) { mutableStateOf(state.domesticWifiSsid) }
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -85,6 +86,37 @@ fun SyncScreen(
                 TextButton(onClick = { viewModel.unlinkDevice(deviceId); unlinkDevice = null }) { Text("Desvincular") }
             },
             dismissButton = { TextButton(onClick = { unlinkDevice = null }) { Text("Cancelar") } },
+        )
+    }
+
+    if (state.showProfilePrompt) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissProfilePrompt,
+            title = { Text("Elegir persona") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("La vinculación ha terminado. Selecciona la persona que utilizará este móvil o crea una nueva.")
+                    if (state.people.isEmpty()) Text("El catálogo de personas todavía no está disponible. Puedes hacerlo después desde Ajustes > Hogar.")
+                    state.people.forEach { person ->
+                        OutlinedButton(onClick = { viewModel.selectProfile(person.id) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(person.name)
+                        }
+                    }
+                    OutlinedTextField(
+                        value = newProfileName,
+                        onValueChange = { newProfileName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Nueva persona") },
+                        singleLine = true,
+                    )
+                    Button(
+                        onClick = { viewModel.createProfile(newProfileName); newProfileName = "" },
+                        enabled = newProfileName.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Crear y asociar") }
+                }
+            },
+            confirmButton = { TextButton(onClick = viewModel::dismissProfilePrompt) { Text("Más tarde") } },
         )
     }
 

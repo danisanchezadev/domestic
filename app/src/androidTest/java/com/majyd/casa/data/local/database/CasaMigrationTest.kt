@@ -4,6 +4,7 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,7 +26,7 @@ class CasaMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_NAME, 37, true, *ALL_MIGRATIONS).use { database ->
+        helper.runMigrationsAndValidate(DB_NAME, 40, true, *ALL_MIGRATIONS).use { database ->
             database.query("SELECT COUNT(*) FROM tasks WHERE id = 'task-old'").use { cursor ->
                 cursor.moveToFirst()
                 assertEquals(1, cursor.getInt(0))
@@ -51,7 +52,7 @@ class CasaMigrationTest {
     fun migrateFromRoom2_emptyDatabase_reachesCurrentSchema() {
         helper.createDatabase(ROOM2_DB_NAME, 2).close()
 
-        helper.runMigrationsAndValidate(ROOM2_DB_NAME, 37, true, *ALL_MIGRATIONS).use {
+        helper.runMigrationsAndValidate(ROOM2_DB_NAME, 40, true, *ALL_MIGRATIONS).use {
             // Schema validation is the assertion for the complete migration chain.
         }
     }
@@ -67,7 +68,7 @@ class CasaMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(ROOM23_DB_NAME, 37, true, *ALL_MIGRATIONS).use { database ->
+        helper.runMigrationsAndValidate(ROOM23_DB_NAME, 40, true, *ALL_MIGRATIONS).use { database ->
             database.query("SELECT updatedByDevice FROM shopping_lists WHERE id = 'list-23'").use { cursor ->
                 cursor.moveToFirst()
                 assertEquals("", cursor.getString(0))
@@ -91,9 +92,29 @@ class CasaMigrationTest {
         }
     }
 
+    @Test
+    fun migrateFromRoom39_preservesAuthorizedDeviceAndAddsAssociationColumns() {
+        helper.createDatabase(ROOM39_DB_NAME, 39).apply {
+            execSQL("INSERT INTO authorized_devices (deviceId, householdId, displayName, lastSeenAt, revoked) VALUES ('device-39', 'house-1', 'Movil', 10, 0)")
+            close()
+        }
+
+        helper.runMigrationsAndValidate(ROOM39_DB_NAME, 40, true, *ALL_MIGRATIONS).use { database ->
+            database.query("SELECT deviceId, householdId, displayName, assignedPersonId, associationUpdatedAt FROM authorized_devices WHERE deviceId = 'device-39'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals("device-39", cursor.getString(0))
+                assertEquals("house-1", cursor.getString(1))
+                assertEquals("Movil", cursor.getString(2))
+                assertTrue(cursor.isNull(3))
+                assertEquals(0L, cursor.getLong(4))
+            }
+        }
+    }
+
     companion object {
         private const val DB_NAME = "casa-migration-test"
         private const val ROOM2_DB_NAME = "casa-migration-room2-test"
         private const val ROOM23_DB_NAME = "casa-migration-room23-test"
+        private const val ROOM39_DB_NAME = "casa-migration-room39-test"
     }
 }

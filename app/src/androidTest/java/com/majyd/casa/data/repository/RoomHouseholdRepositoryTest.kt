@@ -45,6 +45,7 @@ class RoomHouseholdRepositoryTest {
             database = database,
             householdDao = database.householdDao(),
             deviceDao = database.deviceDao(),
+            authorizedDeviceDao = database.authorizedDeviceDao(),
             taskDao = database.taskDao(),
             syncOperationRepository = operationRepository,
             taskRepository = taskRepository,

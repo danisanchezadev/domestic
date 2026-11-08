@@ -85,6 +85,13 @@ class SyncModelsTest {
     }
 
     @Test
+    fun devicePersonPayload_roundTripsStableIdentifiers() {
+        val payload = DevicePersonSyncPayload("device-b", "home-1", "person-b", 42L)
+
+        assertEquals(payload, HouseholdSyncPayloadCodec.decodeDevicePerson(HouseholdSyncPayloadCodec.encode(payload)))
+    }
+
+    @Test
     fun conflictResolver_prefersVersionThenDeviceId() {
         val resolver = DeterministicConflictResolver()
         assertTrue(resolver.incomingWins(1, 100, "a", 2, 1, "b"))

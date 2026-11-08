@@ -14,6 +14,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,11 @@ import com.majyd.casa.notifications.NotificationScheduler
 import com.majyd.casa.notifications.TaskNotificationPolicy
 import com.majyd.casa.data.repository.TaskRepository
 import com.majyd.casa.sync.SyncChangeNotifier
+import com.majyd.casa.sync.SyncOperationRepository
+import com.majyd.casa.data.local.dao.AuthorizedDeviceDao
+import com.majyd.casa.data.local.entities.AuthorizedDeviceEntity
+import com.majyd.casa.sync.DevicePersonSyncPayload
+import com.majyd.casa.sync.HouseholdSyncPayloadCodec
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -31,6 +37,8 @@ class SettingsViewModel @Inject constructor(
     private val taskRepository: TaskRepository,
     private val notificationScheduler: NotificationScheduler,
     private val syncChangeNotifier: SyncChangeNotifier,
+    private val authorizedDeviceDao: AuthorizedDeviceDao,
+    private val syncOperationRepository: SyncOperationRepository,
 ) : ViewModel() {
     private val _personActionMessage = MutableStateFlow<String?>(null)
     val personActionMessage: StateFlow<String?> = _personActionMessage
@@ -63,6 +71,13 @@ class SettingsViewModel @Inject constructor(
         initialValue = null,
     )
 
+    val authorizedDevices = deviceManager.observeDevice()
+        .flatMapLatest { current ->
+            current?.let { authorizedDeviceDao.observeForHousehold(it.householdId) }
+                ?: kotlinx.coroutines.flow.flowOf(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun updateHomeName(value: String) = update { it.copy(homeName = value.take(MAX_HOME_NAME_LENGTH)) }
     fun updatePersonOne(value: String) = update { it.copy(personOneName = value) }
     fun updatePersonTwo(value: String) = update { it.copy(personTwoName = value) }
@@ -92,7 +107,36 @@ class SettingsViewModel @Inject constructor(
     }
     fun cancelPersonDeletion() { _pendingPersonDeletion.value = null }
     fun assignDevice(personId: String?) = viewModelScope.launch {
-        deviceManager.assignPerson(personId)
+        val updated = deviceManager.assignPerson(personId)
+        val now = updated.updatedAt
+        val existing = authorizedDeviceDao.get(updated.deviceId)
+        authorizedDeviceDao.upsert(
+            existing?.copy(
+                assignedPersonId = personId,
+                associationUpdatedAt = now,
+                lastSeenAt = maxOf(existing.lastSeenAt, now),
+                revoked = false,
+            ) ?: AuthorizedDeviceEntity(
+                deviceId = updated.deviceId,
+                householdId = updated.householdId,
+                displayName = updated.displayName,
+                lastSeenAt = now,
+                assignedPersonId = personId,
+                associationUpdatedAt = now,
+            ),
+        )
+        syncOperationRepository.enqueue(
+            householdId = updated.householdId,
+            deviceId = updated.deviceId,
+            entityType = "device_person",
+            entityId = updated.deviceId,
+            payload = HouseholdSyncPayloadCodec.encode(DevicePersonSyncPayload(updated.deviceId, updated.householdId, personId, now)),
+            version = now,
+            updatedAt = now,
+            deleted = personId == null,
+            operationType = "UPDATE",
+        )
+        syncChangeNotifier.request()
         val currentHousehold = householdRepository.observeState().first()
         taskRepository.observeTasks().first().forEach { task ->
             if (task.deleted || task.completed || !TaskNotificationPolicy.isRelevant(task, currentHousehold)) {

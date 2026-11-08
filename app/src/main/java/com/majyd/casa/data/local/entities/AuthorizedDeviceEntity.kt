@@ -10,4 +10,6 @@ data class AuthorizedDeviceEntity(
     val displayName: String,
     val lastSeenAt: Long,
     val revoked: Boolean = false,
+    val assignedPersonId: String? = null,
+    val associationUpdatedAt: Long = 0L,
 )

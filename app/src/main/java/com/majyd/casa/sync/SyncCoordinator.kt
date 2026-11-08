@@ -63,8 +63,14 @@ class SyncCoordinator @Inject constructor(
                         synchronizeAutomatically()
                     }
             }
+            val now = System.currentTimeMillis()
             authorizedDeviceDao.upsert(
-                AuthorizedDeviceEntity(device.deviceId, device.householdId, device.displayName, System.currentTimeMillis())
+                authorizedDeviceDao.get(device.deviceId)?.copy(
+                    householdId = device.householdId,
+                    displayName = device.displayName,
+                    lastSeenAt = now,
+                    revoked = false,
+                ) ?: AuthorizedDeviceEntity(device.deviceId, device.householdId, device.displayName, now)
             )
             settingsRepository.getPairingCode()
             launch {
@@ -104,8 +110,14 @@ class SyncCoordinator @Inject constructor(
                                 if (!wifiNetworkPolicy.isAllowed(network)) {
                                     false
                                 } else {
+                                    val now = System.currentTimeMillis()
                                     authorizedDeviceDao.upsert(
-                                        AuthorizedDeviceEntity(current.deviceId, current.householdId, current.displayName, System.currentTimeMillis())
+                                        authorizedDeviceDao.get(current.deviceId)?.copy(
+                                            householdId = current.householdId,
+                                            displayName = current.displayName,
+                                            lastSeenAt = now,
+                                            revoked = false,
+                                        ) ?: AuthorizedDeviceEntity(current.deviceId, current.householdId, current.displayName, now)
                                     )
                                     val existing = authorizedDeviceDao.get(remoteDeviceId)
                                     AuthorizedDevicePolicy.canAccept(
@@ -119,12 +131,18 @@ class SyncCoordinator @Inject constructor(
                             onAuthorized = { remoteDeviceId ->
                                 val current = deviceManager.ensureDevice()
                                 val existing = authorizedDeviceDao.get(remoteDeviceId)
+                                val now = System.currentTimeMillis()
                                 authorizedDeviceDao.upsert(
-                                    AuthorizedDeviceEntity(
+                                    existing?.copy(
+                                        householdId = current.householdId,
+                                        displayName = existing.displayName.ifBlank { remoteDeviceId },
+                                        lastSeenAt = now,
+                                        revoked = false,
+                                    ) ?: AuthorizedDeviceEntity(
                                         deviceId = remoteDeviceId,
                                         householdId = current.householdId,
-                                        displayName = existing?.displayName ?: remoteDeviceId,
-                                        lastSeenAt = System.currentTimeMillis(),
+                                        displayName = remoteDeviceId,
+                                        lastSeenAt = now,
                                         revoked = false,
                                     )
                                 )
@@ -290,8 +308,16 @@ class SyncCoordinator @Inject constructor(
             incoming.filterNot { it.applied }.forEach { operation ->
                 if (!syncSession.applyIncoming(operation)) throw SyncFailureException(SyncError.DatabaseApplyError)
             }
-            authorizedDeviceDao.upsert(AuthorizedDeviceEntity(current.deviceId, householdId, current.displayName, System.currentTimeMillis()))
-            authorizedDeviceDao.upsert(AuthorizedDeviceEntity(peer.deviceId ?: peer.serviceName, householdId, peer.serviceName, System.currentTimeMillis()))
+            val now = System.currentTimeMillis()
+            authorizedDeviceDao.upsert(
+                authorizedDeviceDao.get(current.deviceId)?.copy(householdId = householdId, displayName = current.displayName, lastSeenAt = now, revoked = false)
+                    ?: AuthorizedDeviceEntity(current.deviceId, householdId, current.displayName, now),
+            )
+            val remoteId = peer.deviceId ?: peer.serviceName
+            authorizedDeviceDao.upsert(
+                authorizedDeviceDao.get(remoteId)?.copy(householdId = householdId, displayName = peer.serviceName, lastSeenAt = now, revoked = false)
+                    ?: AuthorizedDeviceEntity(remoteId, householdId, peer.serviceName, now),
+            )
             SyncResult(0, 0, incoming.count { !it.applied }, incoming.count { !it.applied })
         }
     }

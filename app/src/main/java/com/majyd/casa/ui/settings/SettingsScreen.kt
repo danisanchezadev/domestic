@@ -74,6 +74,7 @@ fun SettingsScreen(
 ) {
     val household by viewModel.household.collectAsStateWithLifecycle()
     val device by viewModel.device.collectAsStateWithLifecycle()
+    val authorizedDevices by viewModel.authorizedDevices.collectAsStateWithLifecycle()
     val personActionMessage by viewModel.personActionMessage.collectAsStateWithLifecycle()
     val pendingPersonDeletion by viewModel.pendingPersonDeletion.collectAsStateWithLifecycle()
     var section by remember { mutableStateOf(SettingsSection.MENU) }
@@ -110,6 +111,8 @@ fun SettingsScreen(
                 SettingsSection.HOUSEHOLD -> HouseholdSection(
                     household = household,
                     devicePersonId = device?.assignedPersonId,
+                    deviceId = device?.deviceId,
+                    authorizedDevices = authorizedDevices,
                     newPersonName = newPersonName,
                     personActionMessage = personActionMessage,
                     onNewPersonNameChange = { newPersonName = it },
@@ -162,9 +165,9 @@ private fun SettingsMenu(onSelect: (SettingsSection) -> Unit, onOpenSync: () -> 
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SettingMenuCard("Grupos", "Personas y grupos", Icons.Filled.Group) { onSelect(SettingsSection.GROUPS) }
-        SettingMenuCard("Hogar", "Personas y grupos", Icons.Filled.Home) { onSelect(SettingsSection.HOUSEHOLD) }
-        SettingMenuCard("Union de dispositivos", "Wi-Fi y sincronizacion", Icons.Filled.Wifi) { onOpenSync() }
+        SettingMenuCard("Grupos", "Organizar personas", Icons.Filled.Group) { onSelect(SettingsSection.GROUPS) }
+        SettingMenuCard("Hogar", "Gestionar personas", Icons.Filled.Home) { onSelect(SettingsSection.HOUSEHOLD) }
+        SettingMenuCard("Union de dispositivos", "Wi-Fi y vinculacion", Icons.Filled.Wifi) { onOpenSync() }
         SettingMenuCard("Nombre de la casa", "Identidad del hogar", Icons.Filled.Home) { onSelect(SettingsSection.HOME_NAME) }
         SettingMenuCard("Apariencia", "Colores y modo oscuro", Icons.Filled.Palette) { onSelect(SettingsSection.APPEARANCE) }
         SettingMenuCard("Tarjetas resumen", "Orden y visibilidad", Icons.Filled.Tune) { onSelect(SettingsSection.DASHBOARD) }
@@ -230,6 +233,8 @@ private fun GroupsSection(
 private fun HouseholdSection(
     household: com.majyd.casa.data.model.HouseholdState,
     devicePersonId: String?,
+    deviceId: String?,
+    authorizedDevices: List<com.majyd.casa.data.local.entities.AuthorizedDeviceEntity>,
     newPersonName: String,
     personActionMessage: String?,
     onNewPersonNameChange: (String) -> Unit,
@@ -240,6 +245,12 @@ private fun HouseholdSection(
 ) {
     Card {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Este movil", style = MaterialTheme.typography.titleMedium)
+            Text(
+                household.people.firstOrNull { it.id == devicePersonId }?.name?.let { "Persona asociada: $it" }
+                    ?: "Persona asociada: sin asignar",
+                style = MaterialTheme.typography.bodyMedium,
+            )
             household.people.forEach { person ->
                 var personName by rememberSaveable(person.id) { mutableStateOf(person.name) }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -249,6 +260,14 @@ private fun HouseholdSection(
                         TextButton(onClick = { onAssignDevice(person.id) }) { Text(if (devicePersonId == person.id) "Este dispositivo" else "Asociar dispositivo") }
                         TextButton(onClick = { onDeletePerson(person.id) }) { Text("Eliminar") }
                     }
+                }
+            }
+            val remoteDevices = authorizedDevices.filter { it.deviceId != deviceId && !it.revoked }
+            if (remoteDevices.isNotEmpty()) {
+                Text("Otros dispositivos", style = MaterialTheme.typography.titleMedium)
+                remoteDevices.forEach { remote ->
+                    val personName = household.people.firstOrNull { it.id == remote.assignedPersonId }?.name
+                    Text("${remote.displayName}: ${personName ?: "sin persona asociada"}")
                 }
             }
             personActionMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }

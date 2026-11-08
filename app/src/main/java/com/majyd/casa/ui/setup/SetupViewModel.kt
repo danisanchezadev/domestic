@@ -6,10 +6,15 @@ import com.majyd.casa.data.repository.HouseholdRepository
 import com.majyd.casa.data.repository.SettingsRepository
 import com.majyd.casa.data.model.HouseholdState
 import com.majyd.casa.sync.DeviceManager
-import com.majyd.casa.sync.SyncSession
+import com.majyd.casa.sync.SyncCoordinator
 import com.majyd.casa.sync.transport.NearbyDevice
 import com.majyd.casa.sync.transport.NsdDeviceDiscovery
 import com.majyd.casa.sync.transport.WifiNetworkPolicy
+import com.majyd.casa.data.local.dao.AuthorizedDeviceDao
+import com.majyd.casa.data.local.entities.AuthorizedDeviceEntity
+import com.majyd.casa.sync.DevicePersonSyncPayload
+import com.majyd.casa.sync.HouseholdSyncPayloadCodec
+import com.majyd.casa.sync.SyncOperationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +32,9 @@ class SetupViewModel @Inject constructor(
     private val deviceManager: DeviceManager,
     private val discovery: NsdDeviceDiscovery,
     private val wifiNetworkPolicy: WifiNetworkPolicy,
-    private val syncSession: SyncSession,
+    private val syncCoordinator: SyncCoordinator,
+    private val authorizedDeviceDao: AuthorizedDeviceDao,
+    private val syncOperationRepository: SyncOperationRepository,
 ) : ViewModel() {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -50,7 +57,23 @@ class SetupViewModel @Inject constructor(
             otherPeople.split(',').map(String::trim).filter(String::isNotBlank).forEach {
                 householdRepository.addPerson(it)
             }
-            deviceManager.assignPerson(first.id)
+            val device = deviceManager.assignPerson(first.id)
+            val now = device.updatedAt
+            val existingDevice = authorizedDeviceDao.get(device.deviceId)
+            authorizedDeviceDao.upsert(
+                existingDevice?.copy(assignedPersonId = first.id, associationUpdatedAt = now, lastSeenAt = maxOf(existingDevice.lastSeenAt, now), revoked = false)
+                    ?: AuthorizedDeviceEntity(device.deviceId, device.householdId, device.displayName, now, assignedPersonId = first.id, associationUpdatedAt = now),
+            )
+            syncOperationRepository.enqueue(
+                householdId = device.householdId,
+                deviceId = device.deviceId,
+                entityType = "device_person",
+                entityId = device.deviceId,
+                payload = HouseholdSyncPayloadCodec.encode(DevicePersonSyncPayload(device.deviceId, device.householdId, first.id, now)),
+                version = now,
+                updatedAt = now,
+                deleted = false,
+            )
             settingsRepository.update {
                 it.copy(
                     homeName = homeName.trim().take(18).ifBlank { "Casa" },
@@ -91,9 +114,7 @@ class SetupViewModel @Inject constructor(
 
     private suspend fun joinHousehold(householdId: String, code: String, device: NearbyDevice) {
         runCatching {
-            settingsRepository.setPairingCode(code)
-            deviceManager.joinHousehold(householdId)
-            syncSession.synchronize(device.host, device.port, householdId, code)
+            syncCoordinator.pairDevice(device, code)
         }.onSuccess {
             _awaitingProfile.value = true
             _message.value = "Hogar vinculado. Elige un perfil o crea uno nuevo."
@@ -103,7 +124,7 @@ class SetupViewModel @Inject constructor(
     }
 
     fun selectProfile(personId: String) = viewModelScope.launch {
-        deviceManager.assignPerson(personId)
+        publishPersonAssociation(personId)
         settingsRepository.update { it.copy(setupCompleted = true) }
         _awaitingProfile.value = false
     }
@@ -114,8 +135,28 @@ class SetupViewModel @Inject constructor(
             _message.value = "Escribe un nombre para crear el perfil."
             return@launch
         }
-        deviceManager.assignPerson(person.id)
+        publishPersonAssociation(person.id)
         settingsRepository.update { it.copy(setupCompleted = true) }
         _awaitingProfile.value = false
+    }
+
+    private suspend fun publishPersonAssociation(personId: String) {
+        val device = deviceManager.assignPerson(personId)
+        val now = device.updatedAt
+        val existingDevice = authorizedDeviceDao.get(device.deviceId)
+        authorizedDeviceDao.upsert(
+            existingDevice?.copy(assignedPersonId = personId, associationUpdatedAt = now, lastSeenAt = maxOf(existingDevice.lastSeenAt, now), revoked = false)
+                ?: AuthorizedDeviceEntity(device.deviceId, device.householdId, device.displayName, now, assignedPersonId = personId, associationUpdatedAt = now),
+        )
+        syncOperationRepository.enqueue(
+            householdId = device.householdId,
+            deviceId = device.deviceId,
+            entityType = "device_person",
+            entityId = device.deviceId,
+            payload = HouseholdSyncPayloadCodec.encode(DevicePersonSyncPayload(device.deviceId, device.householdId, personId, now)),
+            version = now,
+            updatedAt = now,
+            deleted = false,
+        )
     }
 }

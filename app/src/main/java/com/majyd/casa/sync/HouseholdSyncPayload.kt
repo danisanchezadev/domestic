@@ -29,10 +29,20 @@ data class GroupSyncPayload(
     val updatedByDevice: String = "",
 )
 
+@Serializable
+data class DevicePersonSyncPayload(
+    val deviceId: String,
+    val householdId: String,
+    val assignedPersonId: String?,
+    val updatedAt: Long,
+)
+
 object HouseholdSyncPayloadCodec {
     private val json = Json { ignoreUnknownKeys = true }
     fun encode(payload: PersonSyncPayload): String = json.encodeToString(payload)
     fun encode(payload: GroupSyncPayload): String = json.encodeToString(payload)
+    fun encode(payload: DevicePersonSyncPayload): String = json.encodeToString(payload)
     fun decodePerson(payload: String): PersonSyncPayload? = runCatching { json.decodeFromString<PersonSyncPayload>(payload) }.getOrNull()
     fun decodeGroup(payload: String): GroupSyncPayload? = runCatching { json.decodeFromString<GroupSyncPayload>(payload) }.getOrNull()
+    fun decodeDevicePerson(payload: String): DevicePersonSyncPayload? = runCatching { json.decodeFromString<DevicePersonSyncPayload>(payload) }.getOrNull()
 }

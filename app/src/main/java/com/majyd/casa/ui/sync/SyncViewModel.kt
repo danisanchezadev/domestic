@@ -14,8 +14,13 @@ import com.majyd.casa.sync.SyncProgress
 import com.majyd.casa.sync.transport.NearbyDevice
 import com.majyd.casa.sync.transport.WifiNetworkPolicy
 import com.majyd.casa.data.repository.SettingsRepository
+import com.majyd.casa.data.repository.HouseholdRepository
+import com.majyd.casa.data.model.Person
 import com.majyd.casa.data.local.dao.AuthorizedDeviceDao
 import com.majyd.casa.data.local.entities.AuthorizedDeviceEntity
+import com.majyd.casa.sync.DevicePersonSyncPayload
+import com.majyd.casa.sync.HouseholdSyncPayloadCodec
+import com.majyd.casa.sync.SyncOperationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.majyd.casa.R
@@ -36,6 +41,9 @@ data class SyncUiState(
     val selectedDevice: NearbyDevice? = null,
     val pairingCode: String = "",
     val joinCode: String = "",
+    val people: List<Person> = emptyList(),
+    val assignedPersonId: String? = null,
+    val showProfilePrompt: Boolean = false,
     val running: Boolean = false,
     val message: String? = null,
     val authorizedDevices: List<AuthorizedDeviceEntity> = emptyList(),
@@ -69,6 +77,8 @@ class SyncViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val authorizedDeviceDao: AuthorizedDeviceDao,
     private val wifiNetworkPolicy: WifiNetworkPolicy,
+    private val householdRepository: HouseholdRepository,
+    private val syncOperationRepository: SyncOperationRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SyncUiState())
     val state: StateFlow<SyncUiState> = _state.asStateFlow()
@@ -125,6 +135,14 @@ class SyncViewModel @Inject constructor(
                 }
         }
         viewModelScope.launch {
+            householdRepository.observeState().collect { household ->
+                _state.value = _state.value.copy(
+                    people = household.people,
+                    assignedPersonId = household.assignedPersonId,
+                )
+            }
+        }
+        viewModelScope.launch {
             syncCoordinator.nearbyDevices.collect { devices ->
                 _state.value = _state.value.copy(
                     devices = devices,
@@ -178,8 +196,15 @@ class SyncViewModel @Inject constructor(
         runCatching {
             syncCoordinator.pairDevice(peer, _state.value.joinCode) { progress -> updateProgress(progress) }
         }.onSuccess {
-            _state.value = _state.value.copy(running = false, phase = SyncPhase.SUCCESS, finishedAt = System.currentTimeMillis(), message = "Vinculación completada")
-            _events.emit("Vinculación completada")
+            val current = householdRepository.observeState().first()
+            _state.value = _state.value.copy(
+                running = false,
+                phase = SyncPhase.SUCCESS,
+                finishedAt = System.currentTimeMillis(),
+                showProfilePrompt = current.assignedPersonId == null,
+                message = if (current.assignedPersonId == null) "Vinculación completada. Elige la persona que usará este móvil." else "Vinculación completada",
+            )
+            _events.emit(_state.value.message.orEmpty())
         }.onFailure { error ->
             _state.value = _state.value.copy(running = false, phase = SyncPhase.FAILED, message = error.message ?: "No se pudo vincular el móvil")
             _events.emit(_state.value.message.orEmpty())
@@ -187,6 +212,56 @@ class SyncViewModel @Inject constructor(
     }
 
     fun showMessage(value: String) { _state.value = _state.value.copy(message = value) }
+
+    fun selectProfile(personId: String) = viewModelScope.launch {
+        associateCurrentDevice(personId)
+        _state.value = _state.value.copy(showProfilePrompt = false, message = "Persona asociada")
+    }
+
+    fun createProfile(name: String) = viewModelScope.launch {
+        val person = householdRepository.addPerson(name)
+        if (person == null) {
+            _state.value = _state.value.copy(message = "Escribe un nombre para crear la persona")
+            return@launch
+        }
+        associateCurrentDevice(person.id)
+        _state.value = _state.value.copy(showProfilePrompt = false, message = "Persona creada y asociada")
+    }
+
+    fun dismissProfilePrompt() {
+        _state.value = _state.value.copy(showProfilePrompt = false, message = "Puedes asociar este móvil desde Ajustes > Hogar")
+    }
+
+    private suspend fun associateCurrentDevice(personId: String?) {
+        val updated = deviceManager.assignPerson(personId)
+        val now = updated.updatedAt
+        val existing = authorizedDeviceDao.get(updated.deviceId)
+        authorizedDeviceDao.upsert(
+            existing?.copy(
+                assignedPersonId = personId,
+                associationUpdatedAt = now,
+                lastSeenAt = maxOf(existing.lastSeenAt, now),
+                revoked = false,
+            ) ?: AuthorizedDeviceEntity(
+                deviceId = updated.deviceId,
+                householdId = updated.householdId,
+                displayName = updated.displayName,
+                lastSeenAt = now,
+                assignedPersonId = personId,
+                associationUpdatedAt = now,
+            ),
+        )
+        syncOperationRepository.enqueue(
+            householdId = updated.householdId,
+            deviceId = updated.deviceId,
+            entityType = "device_person",
+            entityId = updated.deviceId,
+            payload = HouseholdSyncPayloadCodec.encode(DevicePersonSyncPayload(updated.deviceId, updated.householdId, personId, now)),
+            version = now,
+            updatedAt = now,
+            deleted = personId == null,
+        )
+    }
 
     fun savePairingCode() = viewModelScope.launch {
         runCatching { settingsRepository.setPairingCode(_state.value.pairingCode) }

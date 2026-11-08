@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.majyd.casa.data.local.dao.DeviceDao
 import com.majyd.casa.data.local.dao.HouseholdDao
 import com.majyd.casa.data.local.dao.TaskDao
+import com.majyd.casa.data.local.dao.AuthorizedDeviceDao
 import com.majyd.casa.data.local.database.CasaDatabase
 import com.majyd.casa.data.local.entities.HouseholdGroupEntity
 import com.majyd.casa.data.local.entities.PersonEntity
@@ -25,6 +26,7 @@ import com.majyd.casa.data.local.entities.GroupMemberEntity
 import com.majyd.casa.sync.HouseholdSyncPayloadCodec
 import com.majyd.casa.sync.GroupSyncPayload
 import com.majyd.casa.sync.PersonSyncPayload
+import com.majyd.casa.sync.DevicePersonSyncPayload
 import com.majyd.casa.sync.SyncOperationRepository
 
 @Singleton
@@ -32,6 +34,7 @@ class RoomHouseholdRepository @Inject constructor(
     private val database: CasaDatabase,
     private val householdDao: HouseholdDao,
     private val deviceDao: DeviceDao,
+    private val authorizedDeviceDao: AuthorizedDeviceDao,
     private val taskDao: TaskDao,
     private val syncOperationRepository: SyncOperationRepository,
     private val taskRepository: TaskRepository,
@@ -113,6 +116,11 @@ class RoomHouseholdRepository @Inject constructor(
             householdDao.clearPersonMemberships(personId)
             if (device.assignedPersonId == personId) {
                 deviceDao.assignPerson(device.deviceId, null, now)
+                val authorized = authorizedDeviceDao.get(device.deviceId)
+                if (authorized != null) {
+                    authorizedDeviceDao.upsert(authorized.copy(assignedPersonId = null, associationUpdatedAt = now, lastSeenAt = maxOf(authorized.lastSeenAt, now)))
+                }
+                enqueueDeviceAssociation(device, null, now)
             }
             updatedGroups.forEach { householdDao.upsertGroup(it) }
             enqueuePerson(current.copy(deleted = true, updatedAt = now, version = current.version + 1), "DELETE")
@@ -275,6 +283,19 @@ class RoomHouseholdRepository @Inject constructor(
     private suspend fun enqueueGroup(entity: HouseholdGroupEntity, memberIds: Collection<String>, operationType: String) {
         val device = deviceDao.getDevice() ?: return
         syncOperationRepository.enqueue(device.householdId, device.deviceId, "group", entity.id, HouseholdSyncPayloadCodec.encode(GroupSyncPayload(entity.id, entity.householdId, entity.name, memberIds.toList(), entity.deleted, entity.createdAt, entity.updatedAt, entity.version, entity.updatedByDevice)), entity.version, entity.updatedAt, entity.deleted, operationType)
+    }
+
+    private suspend fun enqueueDeviceAssociation(device: com.majyd.casa.data.local.entities.DeviceIdentityEntity, personId: String?, updatedAt: Long) {
+        syncOperationRepository.enqueue(
+            householdId = device.householdId,
+            deviceId = device.deviceId,
+            entityType = "device_person",
+            entityId = device.deviceId,
+            payload = HouseholdSyncPayloadCodec.encode(DevicePersonSyncPayload(device.deviceId, device.householdId, personId, updatedAt)),
+            version = updatedAt,
+            updatedAt = updatedAt,
+            deleted = personId == null,
+        )
     }
 
     private fun PersonEntity.toModel() = Person(id, householdId, name, updatedAt)

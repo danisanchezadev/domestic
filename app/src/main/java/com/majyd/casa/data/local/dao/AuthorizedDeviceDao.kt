@@ -20,6 +20,12 @@ interface AuthorizedDeviceDao {
     @Upsert
     suspend fun upsert(device: AuthorizedDeviceEntity)
 
+    @Query("UPDATE authorized_devices SET assignedPersonId = :personId, associationUpdatedAt = :updatedAt WHERE deviceId = :deviceId")
+    suspend fun updateAssociation(deviceId: String, personId: String?, updatedAt: Long)
+
+    @Query("UPDATE authorized_devices SET assignedPersonId = NULL, associationUpdatedAt = :updatedAt WHERE assignedPersonId = :personId")
+    suspend fun clearAssignmentsForPerson(personId: String, updatedAt: Long)
+
     @Query("UPDATE authorized_devices SET revoked = 1 WHERE deviceId = :deviceId")
     suspend fun revoke(deviceId: String)
 

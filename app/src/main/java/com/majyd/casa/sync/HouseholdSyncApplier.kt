@@ -5,6 +5,7 @@ import com.majyd.casa.data.local.database.CasaDatabase
 import com.majyd.casa.data.local.entities.GroupMemberEntity
 import com.majyd.casa.data.local.entities.HouseholdGroupEntity
 import com.majyd.casa.data.local.entities.PersonEntity
+import com.majyd.casa.data.local.dao.AuthorizedDeviceDao
 import com.majyd.casa.data.repository.HouseholdRepository
 import com.majyd.casa.data.repository.TaskRepository
 import com.majyd.casa.notifications.NotificationScheduler
@@ -20,6 +21,7 @@ class HouseholdSyncApplier @Inject constructor(
     private val householdRepository: HouseholdRepository,
     private val taskRepository: TaskRepository,
     private val notificationScheduler: NotificationScheduler,
+    private val authorizedDeviceDao: AuthorizedDeviceDao,
 ) {
     private val resolver = DeterministicConflictResolver()
 
@@ -30,6 +32,7 @@ class HouseholdSyncApplier @Inject constructor(
             when (operation.entityType) {
                 "person" -> applyPerson(operation)
                 "group" -> applyGroup(operation)
+                "device_person" -> applyDevicePerson(operation)
                 else -> false
             }.also { value ->
                 if (value) operationRepository.record(operation.copy(applied = true))
@@ -60,6 +63,23 @@ class HouseholdSyncApplier @Inject constructor(
         if (local == null || resolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, payload.version, payload.updatedAt, payload.updatedByDevice.ifBlank { operation.deviceId })) {
             dao.upsertPerson(PersonEntity(payload.id, payload.householdId, payload.name, com.majyd.casa.util.Normalizer.normalizeText(payload.name), payload.deleted, payload.createdAt, payload.updatedAt, payload.version, payload.updatedByDevice.ifBlank { operation.deviceId }))
         }
+        if (payload.deleted) authorizedDeviceDao.clearAssignmentsForPerson(payload.id, payload.updatedAt)
+        return true
+    }
+
+    private suspend fun applyDevicePerson(operation: SyncOperation): Boolean {
+        val payload = HouseholdSyncPayloadCodec.decodeDevicePerson(operation.payload) ?: return false
+        if (payload.householdId != operation.householdId || payload.deviceId != operation.deviceId) return false
+        val current = authorizedDeviceDao.get(payload.deviceId) ?: return false
+        if (current.householdId != payload.householdId || current.revoked) return false
+        if (payload.updatedAt < current.associationUpdatedAt) return true
+        authorizedDeviceDao.upsert(
+            current.copy(
+                assignedPersonId = payload.assignedPersonId,
+                associationUpdatedAt = payload.updatedAt,
+                lastSeenAt = maxOf(current.lastSeenAt, payload.updatedAt),
+            ),
+        )
         return true
     }
 
