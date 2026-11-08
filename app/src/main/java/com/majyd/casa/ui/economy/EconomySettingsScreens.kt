@@ -1,6 +1,7 @@
 package com.majyd.casa.ui.economy
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,13 +46,34 @@ import com.majyd.casa.data.model.EconomyMovementType
 internal fun EconomySettingsScreen(state: EconomyUiState, viewModel: EconomyViewModel, onBack: () -> Unit, onCategories: () -> Unit) {
     var target by remember(state.target) { mutableStateOf("%.2f".format(java.util.Locale.US, state.target.targetCents / 100.0)) }
     var minimum by remember(state.target) { mutableStateOf("%.2f".format(java.util.Locale.US, state.target.minimumCents / 100.0)) }
+    var fiscalStartMonth by remember(state.settings) { mutableStateOf(state.settings.fiscalStartMonth) }
+    var monthMenuOpen by remember { mutableStateOf(false) }
     Scaffold(containerColor = Color.Transparent, topBar = { TopAppBar(title = { Text("Ajustes de economía", fontWeight = FontWeight.ExtraBold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Volver") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF8F1E8).copy(alpha = 0.94f))) }) { padding ->
         EconomyBackground {
             Column(Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Text("Objetivos mensuales", fontWeight = FontWeight.ExtraBold)
                 OutlinedTextField(target, { target = it }, Modifier.fillMaxWidth(), label = { Text("Objetivo de ahorro (€)") })
                 OutlinedTextField(minimum, { minimum = it }, Modifier.fillMaxWidth(), label = { Text("Mínimo aceptable (€)") })
-                Button(onClick = { viewModel.saveTarget(target, minimum) }, Modifier.fillMaxWidth()) { Text("Guardar objetivos", fontWeight = FontWeight.Bold) }
+                Text("Ejercicio económico", fontWeight = FontWeight.ExtraBold)
+                androidx.compose.foundation.layout.Box {
+                    OutlinedTextField(
+                        value = java.time.Month.of(fiscalStartMonth).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale("es", "ES")),
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Mes de inicio") },
+                    )
+                    androidx.compose.foundation.layout.Box(Modifier.matchParentSize().clickable { monthMenuOpen = true })
+                    DropdownMenu(expanded = monthMenuOpen, onDismissRequest = { monthMenuOpen = false }) {
+                        (1..12).forEach { month ->
+                            DropdownMenuItem(
+                                text = { Text(java.time.Month.of(month).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale("es", "ES"))) },
+                                onClick = { fiscalStartMonth = month; monthMenuOpen = false },
+                            )
+                        }
+                    }
+                }
+                Button(onClick = { viewModel.saveTarget(target, minimum); viewModel.saveSettings(fiscalStartMonth) }, Modifier.fillMaxWidth()) { Text("Guardar objetivos", fontWeight = FontWeight.Bold) }
                 Card(Modifier.fillMaxWidth()) { TextButton(onClick = onCategories, Modifier.fillMaxWidth().padding(8.dp)) { Text("Configurar categorías", fontWeight = FontWeight.Bold) } }
             }
         }

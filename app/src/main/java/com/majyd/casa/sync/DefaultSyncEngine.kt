@@ -29,7 +29,7 @@ class DefaultSyncEngine @Inject constructor(
             "weekly_menu_item" -> weeklyMenuSyncApplier.apply(operation)
             "menu_template", "menu_template_item" -> menuTemplateSyncApplier.apply(operation)
             "menu_history_item" -> menuHistorySyncApplier.apply(operation)
-            "economy_category", "economy_movement", "economy_target" -> economySyncApplier.apply(operation)
+            "economy_category", "economy_movement", "economy_target", "economy_settings" -> economySyncApplier.apply(operation)
             else -> false
         }
     }

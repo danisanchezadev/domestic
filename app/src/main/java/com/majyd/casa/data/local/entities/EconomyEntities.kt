@@ -53,3 +53,13 @@ data class EconomyMonthlyTargetEntity(
     val version: Long,
     val updatedByDevice: String,
 )
+
+@Entity(tableName = "economy_settings")
+data class EconomySettingsEntity(
+    @androidx.room.PrimaryKey val householdId: String,
+    val fiscalStartMonth: Int,
+    val currency: String,
+    val updatedAt: Long,
+    val version: Long,
+    val updatedByDevice: String,
+)

@@ -26,7 +26,7 @@ class CasaMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_NAME, 40, true, *ALL_MIGRATIONS).use { database ->
+        helper.runMigrationsAndValidate(DB_NAME, 41, true, *ALL_MIGRATIONS).use { database ->
             database.query("SELECT COUNT(*) FROM tasks WHERE id = 'task-old'").use { cursor ->
                 cursor.moveToFirst()
                 assertEquals(1, cursor.getInt(0))
@@ -52,7 +52,7 @@ class CasaMigrationTest {
     fun migrateFromRoom2_emptyDatabase_reachesCurrentSchema() {
         helper.createDatabase(ROOM2_DB_NAME, 2).close()
 
-        helper.runMigrationsAndValidate(ROOM2_DB_NAME, 40, true, *ALL_MIGRATIONS).use {
+        helper.runMigrationsAndValidate(ROOM2_DB_NAME, 41, true, *ALL_MIGRATIONS).use {
             // Schema validation is the assertion for the complete migration chain.
         }
     }
@@ -68,7 +68,7 @@ class CasaMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(ROOM23_DB_NAME, 40, true, *ALL_MIGRATIONS).use { database ->
+        helper.runMigrationsAndValidate(ROOM23_DB_NAME, 41, true, *ALL_MIGRATIONS).use { database ->
             database.query("SELECT updatedByDevice FROM shopping_lists WHERE id = 'list-23'").use { cursor ->
                 cursor.moveToFirst()
                 assertEquals("", cursor.getString(0))
@@ -99,7 +99,7 @@ class CasaMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(ROOM39_DB_NAME, 40, true, *ALL_MIGRATIONS).use { database ->
+        helper.runMigrationsAndValidate(ROOM39_DB_NAME, 41, true, *ALL_MIGRATIONS).use { database ->
             database.query("SELECT deviceId, householdId, displayName, assignedPersonId, associationUpdatedAt FROM authorized_devices WHERE deviceId = 'device-39'").use { cursor ->
                 cursor.moveToFirst()
                 assertEquals("device-39", cursor.getString(0))

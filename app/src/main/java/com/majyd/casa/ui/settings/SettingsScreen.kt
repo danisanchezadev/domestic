@@ -18,6 +18,10 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Wifi
@@ -41,6 +45,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
@@ -112,6 +118,7 @@ fun SettingsScreen(
                     household = household,
                     devicePersonId = device?.assignedPersonId,
                     deviceId = device?.deviceId,
+                    deviceDisplayName = device?.displayName ?: "Este móvil",
                     authorizedDevices = authorizedDevices,
                     newPersonName = newPersonName,
                     personActionMessage = personActionMessage,
@@ -234,6 +241,7 @@ private fun HouseholdSection(
     household: com.majyd.casa.data.model.HouseholdState,
     devicePersonId: String?,
     deviceId: String?,
+    deviceDisplayName: String,
     authorizedDevices: List<com.majyd.casa.data.local.entities.AuthorizedDeviceEntity>,
     newPersonName: String,
     personActionMessage: String?,
@@ -243,36 +251,138 @@ private fun HouseholdSection(
     onAssignDevice: (String?) -> Unit,
     onDeletePerson: (String) -> Unit,
 ) {
-    Card {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Este movil", style = MaterialTheme.typography.titleMedium)
-            Text(
-                household.people.firstOrNull { it.id == devicePersonId }?.name?.let { "Persona asociada: $it" }
-                    ?: "Persona asociada: sin asignar",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            household.people.forEach { person ->
-                var personName by rememberSaveable(person.id) { mutableStateOf(person.name) }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    OutlinedTextField(personName, { personName = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Nombre de la persona") })
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { onRenamePerson(person.id, personName) }, enabled = personName.isNotBlank() && personName != person.name) { Text("Guardar nombre") }
-                        TextButton(onClick = { onAssignDevice(person.id) }) { Text(if (devicePersonId == person.id) "Este dispositivo" else "Asociar dispositivo") }
-                        TextButton(onClick = { onDeletePerson(person.id) }) { Text("Eliminar") }
+    var showAddPerson by rememberSaveable { mutableStateOf(false) }
+    var editingPersonId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingDeletePersonId by rememberSaveable { mutableStateOf<String?>(null) }
+    var visibleDeviceId by rememberSaveable { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboardManager.current
+
+    Text("Personas del hogar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Text("Gestiona los perfiles y el móvil que utiliza cada persona.", style = MaterialTheme.typography.bodyMedium)
+    Button(onClick = { showAddPerson = true }, modifier = Modifier.fillMaxWidth()) {
+        Text("Añadir persona")
+    }
+    household.people.forEach { person ->
+        var personName by rememberSaveable(person.id) { mutableStateOf(person.name) }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(person.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (person.id == devicePersonId) {
+                    Text("Este móvil", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    IconButton(onClick = { editingPersonId = person.id }) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Editar ${person.name}")
+                    }
+                    IconButton(onClick = { onAssignDevice(person.id) }) {
+                        Icon(Icons.Filled.Link, contentDescription = "Asociar este móvil a ${person.name}")
+                    }
+                    IconButton(onClick = { pendingDeletePersonId = person.id }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar ${person.name}", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
-            val remoteDevices = authorizedDevices.filter { it.deviceId != deviceId && !it.revoked }
-            if (remoteDevices.isNotEmpty()) {
-                Text("Otros dispositivos", style = MaterialTheme.typography.titleMedium)
-                remoteDevices.forEach { remote ->
-                    val personName = household.people.firstOrNull { it.id == remote.assignedPersonId }?.name
-                    Text("${remote.displayName}: ${personName ?: "sin persona asociada"}")
+        }
+        if (editingPersonId == person.id) {
+            AlertDialog(
+                onDismissRequest = { editingPersonId = null },
+                title = { Text("Editar persona") },
+                text = {
+                    OutlinedTextField(
+                        value = personName,
+                        onValueChange = { personName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Nombre") },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { onRenamePerson(person.id, personName); editingPersonId = null },
+                        enabled = personName.isNotBlank() && personName != person.name,
+                    ) { Text("Guardar") }
+                },
+                dismissButton = { TextButton(onClick = { editingPersonId = null }) { Text("Cancelar") } },
+            )
+        }
+    }
+    personActionMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+
+    Spacer(Modifier.height(8.dp))
+    Text("Dispositivos vinculados", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    DeviceCard(
+        displayName = deviceDisplayName,
+        personName = household.people.firstOrNull { it.id == devicePersonId }?.name,
+        isCurrent = true,
+        onShowId = { deviceId?.let { visibleDeviceId = it } },
+    )
+    authorizedDevices.filter { it.deviceId != deviceId && !it.revoked }.forEach { remote ->
+        DeviceCard(
+            displayName = remote.displayName,
+            personName = household.people.firstOrNull { it.id == remote.assignedPersonId }?.name,
+            isCurrent = false,
+            onShowId = { visibleDeviceId = remote.deviceId },
+        )
+    }
+
+    if (showAddPerson) {
+        AlertDialog(
+            onDismissRequest = { showAddPerson = false },
+            title = { Text("Añadir persona") },
+            text = {
+                OutlinedTextField(
+                    value = newPersonName,
+                    onValueChange = onNewPersonNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Nombre") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onAddPerson(); showAddPerson = false }, enabled = newPersonName.isNotBlank()) { Text("Añadir") }
+            },
+            dismissButton = { TextButton(onClick = { showAddPerson = false }) { Text("Cancelar") } },
+        )
+    }
+    pendingDeletePersonId?.let { personId ->
+        val person = household.people.firstOrNull { it.id == personId }
+        AlertDialog(
+            onDismissRequest = { pendingDeletePersonId = null },
+            title = { Text("Eliminar persona") },
+            text = { Text("¿Quieres eliminar a ${person?.name.orEmpty()}? Esta acción no se puede deshacer.") },
+            confirmButton = { TextButton(onClick = { onDeletePerson(personId); pendingDeletePersonId = null }) { Text("Eliminar") } },
+            dismissButton = { TextButton(onClick = { pendingDeletePersonId = null }) { Text("Cancelar") } },
+        )
+    }
+    visibleDeviceId?.let { id ->
+        AlertDialog(
+            onDismissRequest = { visibleDeviceId = null },
+            title = { Text("Identificador del dispositivo") },
+            text = { Text(id) },
+            confirmButton = {
+                TextButton(onClick = { clipboard.setText(AnnotatedString(id)) }) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = "Copiar identificador")
+                    Text("Copiar", modifier = Modifier.padding(start = 6.dp))
                 }
-            }
-            personActionMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            OutlinedTextField(newPersonName, onNewPersonNameChange, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Nueva persona") })
-            Button(onClick = onAddPerson, enabled = newPersonName.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Anadir persona") }
+            },
+            dismissButton = { TextButton(onClick = { visibleDeviceId = null }) { Text("Cerrar") } },
+        )
+    }
+}
+
+@Composable
+private fun DeviceCard(
+    displayName: String,
+    personName: String?,
+    isCurrent: Boolean,
+    onShowId: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(if (isCurrent) "Este dispositivo" else "Dispositivo vinculado", color = MaterialTheme.colorScheme.primary)
+            Text("Persona: ${personName ?: "sin asociar"}")
+            TextButton(onClick = onShowId, modifier = Modifier.align(Alignment.End)) { Text("Ver ID") }
         }
     }
 }

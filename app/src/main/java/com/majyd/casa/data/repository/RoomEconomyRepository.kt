@@ -6,6 +6,7 @@ import com.majyd.casa.data.local.database.CasaDatabase
 import com.majyd.casa.data.local.entities.EconomyCategoryEntity
 import com.majyd.casa.data.local.entities.EconomyMovementEntity
 import com.majyd.casa.data.local.entities.EconomyMonthlyTargetEntity
+import com.majyd.casa.data.local.entities.EconomySettingsEntity
 import com.majyd.casa.data.model.EconomyCategory
 import com.majyd.casa.data.model.EconomyMonthlyTarget
 import com.majyd.casa.data.model.EconomyMovement
@@ -15,6 +16,7 @@ import com.majyd.casa.sync.EconomyCategorySyncPayload
 import com.majyd.casa.sync.EconomyMovementSyncPayload
 import com.majyd.casa.sync.EconomySyncPayloadCodec
 import com.majyd.casa.sync.EconomyTargetSyncPayload
+import com.majyd.casa.sync.EconomySettingsSyncPayload
 import com.majyd.casa.sync.SyncOperationRepository
 import com.majyd.casa.util.Normalizer
 import java.util.UUID
@@ -108,7 +110,7 @@ class RoomEconomyRepository @Inject constructor(
     }
 
     override suspend fun saveTarget(monthKey: String, targetCents: Long, minimumCents: Long): EconomyMonthlyTarget? = database.withTransaction {
-        if (targetCents <= 0 || minimumCents < 0 || minimumCents > targetCents) return@withTransaction null
+        if (targetCents < 0 || minimumCents < 0 || minimumCents > targetCents) return@withTransaction null
         val device = deviceManager.ensureDevice()
         val current = economyDao.getTarget(device.householdId, monthKey)
         val now = System.currentTimeMillis()
@@ -118,9 +120,30 @@ class RoomEconomyRepository @Inject constructor(
         EconomyMonthlyTarget(monthKey, targetCents, minimumCents)
     }
 
+    override suspend fun getSettings(): com.majyd.casa.data.model.EconomySettings = database.withTransaction {
+        val device = deviceManager.ensureDevice()
+        val existing = economyDao.getSettings(device.householdId)
+        if (existing != null) return@withTransaction com.majyd.casa.data.model.EconomySettings(existing.fiscalStartMonth, existing.currency)
+        val now = System.currentTimeMillis()
+        val created = EconomySettingsEntity(device.householdId, 1, "EUR", now, 1, device.deviceId)
+        economyDao.upsertSettings(created)
+        enqueueSettings(created, "CREATE")
+        com.majyd.casa.data.model.EconomySettings()
+    }
+
+    override suspend fun saveSettings(settings: com.majyd.casa.data.model.EconomySettings): com.majyd.casa.data.model.EconomySettings = database.withTransaction {
+        val device = deviceManager.ensureDevice()
+        val current = economyDao.getSettings(device.householdId)
+        val updated = EconomySettingsEntity(device.householdId, settings.fiscalStartMonth.coerceIn(1, 12), "EUR", System.currentTimeMillis(), (current?.version ?: 0) + 1, device.deviceId)
+        economyDao.upsertSettings(updated)
+        enqueueSettings(updated, if (current == null) "CREATE" else "UPDATE")
+        com.majyd.casa.data.model.EconomySettings(updated.fiscalStartMonth, updated.currency)
+    }
+
     private suspend fun enqueueCategory(e: EconomyCategoryEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_category", e.id, EconomySyncPayloadCodec.encode(EconomyCategorySyncPayload(e.id, e.householdId, e.type, e.name, e.normalizedName, e.deleted, e.createdAt, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, e.deleted, operation)
     private suspend fun enqueueMovement(e: EconomyMovementEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_movement", e.id, EconomySyncPayloadCodec.encode(EconomyMovementSyncPayload(e.id, e.householdId, e.type, e.amountCents, e.categoryId, e.dateEpochDay, e.deleted, e.createdAt, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, e.deleted, operation)
     private suspend fun enqueueTarget(e: EconomyMonthlyTargetEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_target", "${e.householdId}:${e.monthKey}", EconomySyncPayloadCodec.encode(EconomyTargetSyncPayload(e.householdId, e.monthKey, e.targetCents, e.minimumCents, e.createdAt, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, false, operation)
+    private suspend fun enqueueSettings(e: EconomySettingsEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_settings", e.householdId, EconomySyncPayloadCodec.encode(EconomySettingsSyncPayload(e.householdId, e.fiscalStartMonth, e.currency, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, false, operation)
     private fun categoryModel(e: EconomyCategoryEntity) = EconomyCategory(e.id, runCatching { EconomyMovementType.valueOf(e.type) }.getOrDefault(EconomyMovementType.EXPENSE), e.name, e.deleted)
     private fun movementModel(e: EconomyMovementEntity) = EconomyMovement(e.id, runCatching { EconomyMovementType.valueOf(e.type) }.getOrDefault(EconomyMovementType.EXPENSE), e.amountCents, e.categoryId, e.dateEpochDay, e.deleted)
 }

@@ -4,6 +4,7 @@ import com.majyd.casa.data.model.EconomyCategory
 import com.majyd.casa.data.model.EconomyMonthlyTarget
 import com.majyd.casa.data.model.EconomyMovement
 import com.majyd.casa.data.model.EconomyMovementType
+import com.majyd.casa.data.model.EconomySettings
 import kotlinx.coroutines.flow.Flow
 
 interface EconomyRepository {
@@ -16,4 +17,6 @@ interface EconomyRepository {
     suspend fun archiveCategory(id: String)
     suspend fun getTarget(monthKey: String): EconomyMonthlyTarget
     suspend fun saveTarget(monthKey: String, targetCents: Long, minimumCents: Long): EconomyMonthlyTarget?
+    suspend fun getSettings(): EconomySettings
+    suspend fun saveSettings(settings: EconomySettings): EconomySettings
 }

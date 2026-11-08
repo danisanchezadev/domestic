@@ -46,6 +46,7 @@ import com.majyd.casa.data.local.dao.EconomyDao
 import com.majyd.casa.data.local.entities.EconomyCategoryEntity
 import com.majyd.casa.data.local.entities.EconomyMovementEntity
 import com.majyd.casa.data.local.entities.EconomyMonthlyTargetEntity
+import com.majyd.casa.data.local.entities.EconomySettingsEntity
 
 @Database(
     entities = [
@@ -81,8 +82,9 @@ import com.majyd.casa.data.local.entities.EconomyMonthlyTargetEntity
         EconomyCategoryEntity::class,
         EconomyMovementEntity::class,
         EconomyMonthlyTargetEntity::class,
+        EconomySettingsEntity::class,
     ],
-    version = 40,
+    version = 41,
     exportSchema = true,
 )
 abstract class CasaDatabase : RoomDatabase() {

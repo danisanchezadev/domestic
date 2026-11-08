@@ -197,12 +197,13 @@ class SyncViewModel @Inject constructor(
             syncCoordinator.pairDevice(peer, _state.value.joinCode) { progress -> updateProgress(progress) }
         }.onSuccess {
             val current = householdRepository.observeState().first()
+            val associationIsValid = current.assignedPersonId != null && current.people.any { it.id == current.assignedPersonId }
             _state.value = _state.value.copy(
                 running = false,
                 phase = SyncPhase.SUCCESS,
                 finishedAt = System.currentTimeMillis(),
-                showProfilePrompt = current.assignedPersonId == null,
-                message = if (current.assignedPersonId == null) "Vinculación completada. Elige la persona que usará este móvil." else "Vinculación completada",
+                showProfilePrompt = !associationIsValid,
+                message = if (!associationIsValid) "Vinculación completada. Elige la persona que usará este móvil." else "Vinculación completada",
             )
             _events.emit(_state.value.message.orEmpty())
         }.onFailure { error ->
