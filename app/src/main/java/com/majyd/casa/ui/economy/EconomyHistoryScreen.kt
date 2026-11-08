@@ -8,13 +8,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -22,7 +24,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.majyd.casa.data.model.EconomyMovement
 import com.majyd.casa.data.model.EconomyCalculations
@@ -48,11 +50,7 @@ import java.util.Locale
 
 @Composable
 @androidx.compose.material3.ExperimentalMaterial3Api
-internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewModel, onBack: () -> Unit, onEdit: (EconomyMovement) -> Unit, onDelete: (EconomyMovement) -> Unit) {
-    var showAll by remember { mutableStateOf(false) }
-    var typeFilter by remember { mutableStateOf<EconomyMovementType?>(null) }
-    var categoryFilter by remember { mutableStateOf<String?>(null) }
-    var selectedPeriod by remember { mutableStateOf(YearMonth.now()) }
+internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewModel, onBack: () -> Unit) {
     val currentMonth = YearMonth.now()
     val currentFiscalYear = if (currentMonth.monthValue >= state.settings.fiscalStartMonth) currentMonth.year else currentMonth.year - 1
     var selectedFiscalYear by remember(state.settings.fiscalStartMonth) { mutableStateOf(currentFiscalYear) }
@@ -63,15 +61,7 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
         state.historyMovements.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == month }
     }
     val exerciseMovements = groups.values.flatten()
-    val visibleHistory = if (showAll) state.allHistoryMovements else state.historyMonthMovements
-    LaunchedEffect(selectedFiscalYear, state.settings.fiscalStartMonth, showAll) {
-        if (showAll) viewModel.loadAllHistory() else viewModel.loadHistory(fiscalStart, fiscalStart.plusMonths(11))
-    }
-    LaunchedEffect(selectedPeriod) { viewModel.loadHistoryMonth(selectedPeriod) }
-    val filteredMovements = visibleHistory.filter { movement ->
-        (typeFilter == null || movement.type == typeFilter) &&
-            (categoryFilter == null || movement.categoryId == categoryFilter)
-    }
+    LaunchedEffect(selectedFiscalYear, state.settings.fiscalStartMonth) { viewModel.loadHistory(fiscalStart, fiscalStart.plusMonths(11)) }
     val totals = EconomyCalculations.totals(exerciseMovements)
     val income = totals.incomeCents
     val expense = totals.expenseCents
@@ -82,6 +72,8 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
         .mapValues { (_, values) -> values.sumOf { it.amountCents } }
         .toList()
         .sortedByDescending { it.second }
+    val displayGroups = groups.filter { (month, values) -> month <= currentMonth || values.isNotEmpty() }
+    val totalExpense = expenseByCategory.sumOf { it.second }.coerceAtLeast(1L)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -98,6 +90,13 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    IconButton(onClick = { selectedFiscalYear-- }) { Icon(Icons.Filled.ChevronLeft, "Ejercicio anterior") }
+                    Text("Ejercicio $fiscalTitle", Modifier.padding(horizontal = 10.dp), fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                    IconButton(onClick = { selectedFiscalYear++ }) { Icon(Icons.Filled.ChevronRight, "Ejercicio siguiente") }
+                }
+            }
+            item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         EconomySummaryRow("Ingresos", income, Color(0xFF3B7A4A))
@@ -107,77 +106,20 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
                     }
                 }
             }
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Ejercicio $fiscalTitle", fontWeight = FontWeight.ExtraBold)
-                    androidx.compose.material3.TextButton(onClick = { selectedFiscalYear-- }) { Text("Anterior") }
-                    androidx.compose.material3.TextButton(onClick = { selectedFiscalYear++ }) { Text("Siguiente") }
-                }
-            }
-            item { SectionTitle("Ahorro mensual") }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(if (showAll) "Todos los movimientos" else "Movimientos de ${EconomyViewModel.formatMonth(selectedPeriod)}", fontWeight = FontWeight.Bold)
-                        androidx.compose.material3.TextButton(onClick = { selectedPeriod = selectedPeriod.minusMonths(1) }) { Text("Anterior") }
-                        androidx.compose.material3.TextButton(onClick = { selectedPeriod = selectedPeriod.plusMonths(1) }) { Text("Siguiente") }
-                        androidx.compose.material3.TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "Ver mes actual" else "Ver todos") }
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(selected = typeFilter == null, onClick = { typeFilter = null }, label = { Text("Todos") })
-                        EconomyMovementType.entries.forEach { type ->
-                            FilterChip(selected = typeFilter == type, onClick = { typeFilter = if (typeFilter == type) null else type }, label = { Text(typeLabel(type)) })
-                        }
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        state.categories.filter { it.id in visibleHistory.map { movement -> movement.categoryId }.toSet() }.forEach { category ->
-                            FilterChip(selected = categoryFilter == category.id, onClick = { categoryFilter = if (categoryFilter == category.id) null else category.id }, label = { Text(category.name) })
-                        }
-                    }
-                }
-            }
-            if (groups.isEmpty()) {
+            if (displayGroups.isEmpty()) {
                 item { Text("Sin movimientos registrados", fontWeight = FontWeight.Bold) }
             } else {
-                item { Card { Column(Modifier.padding(14.dp)) { MonthlySavingsChart(groups, state.target.targetCents, state.target.minimumCents) } } }
-                items(groups.toList(), key = { it.first.toString() }) { (month, values) ->
-                    val futureWithoutMovements = month > YearMonth.now() && values.isEmpty()
-                    val monthIncome = values.filter { it.type == EconomyMovementType.INCOME }.sumOf { it.amountCents }
-                    val monthExpense = values.filter { it.type == EconomyMovementType.EXPENSE }.sumOf { it.amountCents }
-                    val monthInvestment = values.filter { it.type == EconomyMovementType.INVESTMENT }.sumOf { it.amountCents }
-                    val monthSavings = monthlySavings(values)
-                    Card(colors = CardDefaults.cardColors(containerColor = if (futureWithoutMovements) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surface)) {
-                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(if (futureWithoutMovements) "${formatSpanishMonth(month)} · Próximo" else formatSpanishMonth(month), fontWeight = FontWeight.Bold, color = if (futureWithoutMovements) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                CompactStat("Ingresos", monthIncome, Color(0xFF3B7A4A))
-                                CompactStat("Gastos", monthExpense, Color(0xFFC44646))
-                                CompactStat("Inversión", monthInvestment, Color(0xFF8E55B8))
-                                CompactStat("Ahorro", monthSavings, if (monthSavings >= 0) Color(0xFFB33A3A) else Color.Black)
-                            }
-                        }
-                    }
-                }
+                item { SectionTitle("Ahorro mensual") }
+                item { Card { Column(Modifier.padding(14.dp)) { MonthlySavingsChart(displayGroups, state.target.targetCents, state.target.minimumCents) } } }
+                item { SectionTitle("Resumen mensual") }
+                item { MonthlyEconomyTable(displayGroups, savings) }
             }
-            item { SectionTitle("Gastos por categoría") }
-            items(expenseByCategory, key = { it.first }) { (categoryId, amount) ->
-                val name = state.categories.firstOrNull { it.id == categoryId }?.name ?: "Categoría archivada"
-                Card { Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("$name:", fontWeight = FontWeight.Bold); Text(EconomyViewModel.formatCents(amount), fontWeight = FontWeight.ExtraBold) } }
-            }
-            item { SectionTitle("Movimientos") }
-            items(filteredMovements, key = { it.id }) { movement ->
-                val category = state.categories.firstOrNull { it.id == movement.categoryId }?.name ?: "Categoría archivada"
-                Card {
-                    Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(category, fontWeight = FontWeight.Bold)
-                            Text(typeLabel(movement.type), style = MaterialTheme.typography.bodySmall)
-                            Text(EconomyViewModel.formatMonth(YearMonth.from(LocalDate.ofEpochDay(movement.dateEpochDay))), style = MaterialTheme.typography.bodySmall)
-                        }
-                        Text(EconomyViewModel.formatCents(movement.amountCents), fontWeight = FontWeight.ExtraBold)
-                        IconButton(onClick = { onEdit(movement) }) { Icon(Icons.Filled.Edit, "Editar") }
-                        IconButton(onClick = { onDelete(movement) }) { Icon(Icons.Filled.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) }
-                    }
+            if (expenseByCategory.isNotEmpty()) {
+                item { SectionTitle("Gastos por categoría") }
+                items(expenseByCategory, key = { it.first }) { (categoryId, amount) ->
+                    val name = state.categories.firstOrNull { it.id == categoryId }?.name ?: "Categoría archivada"
+                    val percentage = amount.toFloat() / totalExpense
+                    Card { Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(name, fontWeight = FontWeight.Bold); Text("${EconomyViewModel.formatCents(amount)} · ${(percentage * 100).toInt()}%", fontWeight = FontWeight.ExtraBold) }; androidx.compose.material3.LinearProgressIndicator(progress = { percentage.coerceIn(0f, 1f) }, Modifier.fillMaxWidth()) } }
                 }
             }
         }
@@ -191,11 +133,50 @@ private fun monthlySavings(values: List<EconomyMovement>): Long = values.sumOf {
     }
 }
 
-private fun typeLabel(type: EconomyMovementType): String = when (type) {
-    EconomyMovementType.INCOME -> "Ingresos"
-    EconomyMovementType.EXPENSE -> "Gastos"
-    EconomyMovementType.INVESTMENT -> "Inversiones"
+@Composable
+private fun MonthlyEconomyTable(groups: Map<YearMonth, List<EconomyMovement>>, totalSavings: Long) {
+    val scrollState = rememberScrollState()
+    val totalValues = groups.values.flatten()
+    val totalIncome = totalValues.filter { it.type == EconomyMovementType.INCOME }.sumOf { it.amountCents }
+    val totalExpense = totalValues.filter { it.type == EconomyMovementType.EXPENSE }.sumOf { it.amountCents }
+    val totalInvestment = totalValues.filter { it.type == EconomyMovementType.INVESTMENT }.sumOf { it.amountCents }
+    Column(Modifier.horizontalScroll(scrollState)) {
+        Row(Modifier.width(620.dp)) {
+            TableCell("Mes", 92.dp, true)
+            TableCell("Ingresos", 132.dp, true, TextAlign.End)
+            TableCell("Gastos", 132.dp, true, TextAlign.End)
+            TableCell("Inversión", 132.dp, true, TextAlign.End)
+            TableCell("Ahorro", 132.dp, true, TextAlign.End)
+        }
+        groups.forEach { (month, values) ->
+            val income = values.filter { it.type == EconomyMovementType.INCOME }.sumOf { it.amountCents }
+            val expense = values.filter { it.type == EconomyMovementType.EXPENSE }.sumOf { it.amountCents }
+            val investment = values.filter { it.type == EconomyMovementType.INVESTMENT }.sumOf { it.amountCents }
+            val savings = monthlySavings(values)
+            Row(Modifier.width(620.dp)) {
+                TableCell(month.month.getDisplayName(TextStyle.SHORT, Locale("es", "ES")).replaceFirstChar { it.uppercase() }, 92.dp)
+                TableCell(compactAmount(income), 132.dp, textAlign = TextAlign.End)
+                TableCell(compactAmount(expense), 132.dp, textAlign = TextAlign.End)
+                TableCell(compactAmount(investment), 132.dp, textAlign = TextAlign.End)
+                TableCell(compactAmount(savings), 132.dp, color = when { savings > 0L -> Color(0xFF1976FF); savings < 0L -> Color(0xFFC44646); else -> MaterialTheme.colorScheme.onSurface }, textAlign = TextAlign.End)
+            }
+        }
+        Row(Modifier.width(620.dp)) {
+            TableCell("Total", 92.dp, true)
+            TableCell(compactAmount(totalIncome), 132.dp, true, TextAlign.End)
+            TableCell(compactAmount(totalExpense), 132.dp, true, TextAlign.End)
+            TableCell(compactAmount(totalInvestment), 132.dp, true, TextAlign.End)
+            TableCell(compactAmount(totalSavings), 132.dp, true, TextAlign.End, when { totalSavings > 0L -> Color(0xFF1976FF); totalSavings < 0L -> Color(0xFFC44646); else -> MaterialTheme.colorScheme.onSurface })
+        }
+    }
 }
+
+@Composable
+private fun TableCell(value: String, width: androidx.compose.ui.unit.Dp, bold: Boolean = false, textAlign: TextAlign = TextAlign.Start, color: Color = MaterialTheme.colorScheme.onSurface) {
+    Text(value, Modifier.width(width).padding(horizontal = 6.dp, vertical = 8.dp), color = color, fontWeight = if (bold) FontWeight.ExtraBold else FontWeight.Normal, textAlign = textAlign, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+}
+
+private fun compactAmount(cents: Long): String = EconomyViewModel.formatCents(cents).replace(",00 €", " €")
 
 @Composable
 private fun EconomySummaryRow(title: String, amount: Long, color: Color) {
@@ -251,15 +232,6 @@ private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, t
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             groups.keys.forEach { month -> Text(month.month.getDisplayName(TextStyle.SHORT, Locale("es", "ES")).replaceFirstChar { it.uppercase(Locale("es", "ES")) }, fontWeight = FontWeight.Bold) }
         }
-        Text("Rojo: ahorro positivo · Negro: pérdida", style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun CompactStat(label: String, amount: Long, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MaterialTheme.typography.labelSmall)
-        Text(EconomyViewModel.formatCents(amount), color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
     }
 }
 
