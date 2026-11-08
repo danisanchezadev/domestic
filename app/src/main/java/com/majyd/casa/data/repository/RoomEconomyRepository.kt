@@ -35,6 +35,11 @@ class RoomEconomyRepository @Inject constructor(
     override fun observeCategories(): Flow<List<EconomyCategory>> = economyDao.observeCategories().map { it.map(::categoryModel) }
     override fun observeMovements(): Flow<List<EconomyMovement>> = economyDao.observeMovements().map { it.map(::movementModel) }
     override fun observeMovements(month: java.time.YearMonth): Flow<List<EconomyMovement>> = economyDao.observeMovementsBetween(month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { it.map(::movementModel) }
+    override fun observeMovementsBetween(start: java.time.YearMonth, end: java.time.YearMonth): Flow<List<EconomyMovement>> = economyDao.observeMovementsBetween(start.atDay(1).toEpochDay(), end.atEndOfMonth().toEpochDay()).map { it.map(::movementModel) }
+    override fun observeAllMovements(): Flow<List<EconomyMovement>> = economyDao.observeAllMovements().map { it.map(::movementModel) }
+    override fun observeSettings(): Flow<com.majyd.casa.data.model.EconomySettings> = economyDao.observeSettings().map { entity ->
+        entity?.let { com.majyd.casa.data.model.EconomySettings(it.fiscalStartMonth, it.currency, it.targetCents, it.minimumCents) } ?: com.majyd.casa.data.model.EconomySettings()
+    }
     override suspend fun getMovementsBetween(start: java.time.YearMonth, end: java.time.YearMonth): List<EconomyMovement> = economyDao.getMovementsBetween(start.atDay(1).toEpochDay(), end.atEndOfMonth().toEpochDay()).map(::movementModel)
     override suspend fun getAllMovements(): List<EconomyMovement> = economyDao.getAllMovements().map(::movementModel)
 
@@ -58,9 +63,9 @@ class RoomEconomyRepository @Inject constructor(
     override suspend fun saveMovement(id: String?, type: EconomyMovementType, amountCents: Long, categoryId: String, dateEpochDay: Long): EconomyMovement? = database.withTransaction {
         if (amountCents <= 0) return@withTransaction null
         val category = economyDao.getCategory(categoryId) ?: return@withTransaction null
-        if (category.deleted || category.type != type.name) return@withTransaction null
         val device = deviceManager.ensureDevice()
         val current = id?.let { economyDao.getMovement(it) }
+        if (category.type != type.name || (category.deleted && (current == null || current.categoryId != categoryId))) return@withTransaction null
         val now = System.currentTimeMillis()
         val entity = EconomyMovementEntity(current?.id ?: UUID.randomUUID().toString(), device.householdId, type.name, amountCents, categoryId, dateEpochDay, false, current?.createdAt ?: now, now, (current?.version ?: 0) + 1, device.deviceId)
         economyDao.upsertMovement(entity)
@@ -132,7 +137,7 @@ class RoomEconomyRepository @Inject constructor(
     override suspend fun saveSettings(settings: com.majyd.casa.data.model.EconomySettings): com.majyd.casa.data.model.EconomySettings = database.withTransaction {
         val device = deviceManager.ensureDevice()
         val current = economyDao.getSettings(device.householdId)
-        val updated = EconomySettingsEntity(device.householdId, settings.fiscalStartMonth.coerceIn(1, 12), "EUR", settings.targetCents.coerceAtLeast(0L), settings.minimumCents.coerceAtLeast(0L), System.currentTimeMillis(), (current?.version ?: 0) + 1, device.deviceId)
+        val updated = EconomySettingsEntity(device.householdId, settings.fiscalStartMonth.coerceIn(1, 12), current?.currency ?: settings.currency, settings.targetCents.coerceAtLeast(0L), settings.minimumCents.coerceAtLeast(0L), System.currentTimeMillis(), (current?.version ?: 0) + 1, device.deviceId)
         economyDao.upsertSettings(updated)
         enqueueSettings(updated, if (current == null) "CREATE" else "UPDATE")
         com.majyd.casa.data.model.EconomySettings(updated.fiscalStartMonth, updated.currency, updated.targetCents, updated.minimumCents)

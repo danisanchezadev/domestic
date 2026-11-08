@@ -531,6 +531,7 @@ val MIGRATION_41_42 = object : Migration(41, 42) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE economy_settings ADD COLUMN targetCents INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE economy_settings ADD COLUMN minimumCents INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("INSERT INTO economy_settings (householdId, fiscalStartMonth, currency, targetCents, minimumCents, updatedAt, version, updatedByDevice) SELECT t.householdId, 1, 'EUR', t.targetCents, t.minimumCents, t.updatedAt, t.version, t.updatedByDevice FROM economy_monthly_targets t WHERE t.updatedAt = (SELECT MAX(t2.updatedAt) FROM economy_monthly_targets t2 WHERE t2.householdId = t.householdId) AND NOT EXISTS (SELECT 1 FROM economy_settings s WHERE s.householdId = t.householdId)")
         db.execSQL("UPDATE economy_settings SET targetCents = COALESCE((SELECT targetCents FROM economy_monthly_targets t WHERE t.householdId = economy_settings.householdId ORDER BY t.updatedAt DESC LIMIT 1), 0), minimumCents = COALESCE((SELECT minimumCents FROM economy_monthly_targets t WHERE t.householdId = economy_settings.householdId ORDER BY t.updatedAt DESC LIMIT 1), 0)")
     }
 }

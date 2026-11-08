@@ -22,6 +22,14 @@ class EconomyViewModelTest {
     }
 
     @Test
+    fun rejectsInvalidAccountingYearsWithoutFallback() {
+        assertNull(EconomyViewModel.parseAccountingYear(""))
+        assertNull(EconomyViewModel.parseAccountingYear("0"))
+        assertNull(EconomyViewModel.parseAccountingYear("10000"))
+        assertEquals(2026, EconomyViewModel.parseAccountingYear("2026"))
+    }
+
+    @Test
     fun calculatesLiquidityIncludingInvestments() {
         val movements = listOf(
             EconomyMovement("income", EconomyMovementType.INCOME, 500_000, "income", 0),

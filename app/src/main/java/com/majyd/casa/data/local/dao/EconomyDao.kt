@@ -37,6 +37,9 @@ interface EconomyDao {
     @Query("SELECT * FROM economy_movements WHERE deleted = 0 AND householdId = (SELECT householdId FROM device_identity LIMIT 1) ORDER BY dateEpochDay DESC, createdAt DESC")
     suspend fun getAllMovements(): List<EconomyMovementEntity>
 
+    @Query("SELECT * FROM economy_movements WHERE deleted = 0 AND householdId = (SELECT householdId FROM device_identity LIMIT 1) ORDER BY dateEpochDay DESC, createdAt DESC")
+    fun observeAllMovements(): Flow<List<EconomyMovementEntity>>
+
     @Query("SELECT * FROM economy_movements WHERE id = :id AND householdId = (SELECT householdId FROM device_identity LIMIT 1) LIMIT 1")
     suspend fun getMovement(id: String): EconomyMovementEntity?
 
@@ -52,6 +55,9 @@ interface EconomyDao {
 
     @Query("SELECT * FROM economy_settings WHERE householdId = :householdId LIMIT 1")
     suspend fun getSettings(householdId: String): EconomySettingsEntity?
+
+    @Query("SELECT * FROM economy_settings WHERE householdId = (SELECT householdId FROM device_identity LIMIT 1) LIMIT 1")
+    fun observeSettings(): Flow<EconomySettingsEntity?>
 
     @Upsert suspend fun upsertSettings(value: EconomySettingsEntity)
 }

@@ -3,6 +3,7 @@ package com.majyd.casa.ui.economy
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,6 +57,7 @@ import com.majyd.casa.data.model.EconomyMovement
 import com.majyd.casa.data.model.EconomyMovementType
 import java.time.LocalDate
 import java.time.YearMonth
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,6 +70,13 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     var showCategorySettings by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<EconomyMovement?>(null) }
     var selectedMonth by remember { mutableStateOf(YearMonth.now()) }
+    var today by remember { mutableStateOf(LocalDate.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            today = LocalDate.now()
+            delay(60_000)
+        }
+    }
     LaunchedEffect(selectedMonth) { viewModel.loadTarget(selectedMonth) }
     if (showHistory) {
         EconomyHistoryScreen(state, viewModel, onBack = { showHistory = false }, onEdit = { editing = it; showHistory = false }, onDelete = { pendingDelete = it; showHistory = false })
@@ -88,7 +97,7 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     val expense = totals.expenseCents
     val investment = totals.investmentCents
     val balance = totals.liquidityCents
-    val daysRemaining = month.lengthOfMonth() - LocalDate.now().dayOfMonth + 1
+    val daysRemaining = month.lengthOfMonth() - today.dayOfMonth + 1
     val status = when { balance >= state.target.targetCents -> Color(0xFF3B7A4A); balance >= state.target.minimumCents -> Color(0xFFD39A2C); balance >= 0L -> Color(0xFFD66A24); else -> Color(0xFFC44646) }
     Scaffold(
         containerColor = Color.Transparent,
@@ -97,10 +106,10 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
         EconomyBackground {
             LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { TextButton(onClick = { selectedMonth = selectedMonth.minusMonths(1) }) { Text("Anterior") }; Text(EconomyViewModel.formatMonth(month), fontWeight = FontWeight.ExtraBold); TextButton(onClick = { selectedMonth = selectedMonth.plusMonths(1) }) { Text("Siguiente") } } }
-            item { Card(colors = CardDefaults.cardColors(containerColor = status.copy(alpha = 0.16f)), shape = RoundedCornerShape(22.dp)) { Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(EconomyViewModel.formatMonth(month), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold); Text(EconomyViewModel.formatCents(balance), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 64.sp, fontWeight = FontWeight.ExtraBold, color = status); Text(balanceLabel(balance, state.target.targetCents, state.target.minimumCents), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text("Ingresos\n${EconomyViewModel.formatCents(income)}", color = Color(0xFF3B7A4A), fontWeight = FontWeight.Bold); Text("Gastos\n${EconomyViewModel.formatCents(expense)}", color = Color(0xFFC44646), fontWeight = FontWeight.Bold); Text("Inversión\n${EconomyViewModel.formatCents(investment)}", color = Color(0xFF8E55B8), fontWeight = FontWeight.Bold) } } } }
+            item { Card(colors = CardDefaults.cardColors(containerColor = status.copy(alpha = 0.16f)), shape = RoundedCornerShape(22.dp)) { Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(EconomyViewModel.formatMonth(month), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold); Box(Modifier.fillMaxWidth()) { Text(EconomyViewModel.formatCents(balance), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = when { EconomyViewModel.formatCents(balance).length > 16 -> 32.sp; EconomyViewModel.formatCents(balance).length > 12 -> 40.sp; else -> 56.sp }, fontWeight = FontWeight.ExtraBold, color = status, maxLines = 1, softWrap = false) }; Text(balanceLabel(balance, state.target.targetCents, state.target.minimumCents), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text("Ingresos\n${EconomyViewModel.formatCents(income)}", color = Color(0xFF3B7A4A), fontWeight = FontWeight.Bold); Text("Gastos\n${EconomyViewModel.formatCents(expense)}", color = Color(0xFFC44646), fontWeight = FontWeight.Bold); Text("Inversión\n${EconomyViewModel.formatCents(investment)}", color = Color(0xFF8E55B8), fontWeight = FontWeight.Bold) } } } }
             item { Text("Margen hasta el objetivo: ${EconomyViewModel.formatCents(balance - state.target.targetCents)}", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold, color = status) }
             item { EconomyLiquidityBar(income, balance, state.target.targetCents, state.target.minimumCents, status) }
-            if (month == YearMonth.now()) item { Text("Quedan $daysRemaining días para finalizar el mes", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold) }
+            if (month == YearMonth.from(today)) item { Text("Quedan $daysRemaining días para finalizar el mes", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold) }
             item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { Button(onClick = { entryType = EconomyMovementType.INCOME }, Modifier.weight(1f)) { Text("Ingreso", fontWeight = FontWeight.Bold) }; Button(onClick = { entryType = EconomyMovementType.EXPENSE }, Modifier.weight(1f)) { Text("Gasto", fontWeight = FontWeight.Bold) }; Button(onClick = { entryType = EconomyMovementType.INVESTMENT }, Modifier.weight(1f)) { Text("Inversión", fontWeight = FontWeight.Bold) } } }
             item { OutlinedButton(onClick = { showHistory = true }, Modifier.fillMaxWidth()) { Text("Histórico y estadísticas", fontWeight = FontWeight.Bold) } }
             item { Text("Movimientos de ${EconomyViewModel.formatMonth(month)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold) }
@@ -178,7 +187,13 @@ private fun EconomyMovementDialog(
     var expanded by remember { mutableStateOf(false) }
     var monthExpanded by remember { mutableStateOf(false) }
     val options = categories.filter { it.type == type && !it.deleted }
-    val selectedYear = yearText.toIntOrNull()?.coerceIn(1, 9999) ?: selectedMonth.year
+    val enteredYear = EconomyViewModel.parseAccountingYear(yearText)
+    val yearError = when {
+        yearText.isBlank() -> "Introduce el año contable."
+        enteredYear == null -> "Introduce un año entre 1 y 9999."
+        else -> null
+    }
+    val selectedYear = enteredYear ?: selectedMonth.year
     val monthOptions = (1..12).map { YearMonth.of(selectedYear, it) }
 
     AlertDialog(
@@ -207,7 +222,7 @@ private fun EconomyMovementDialog(
                         }
                     }
                 }
-                OutlinedTextField(yearText, { yearText = it.filter(Char::isDigit).take(4) }, Modifier.fillMaxWidth(), label = { Text("Año contable") }, singleLine = true)
+                OutlinedTextField(yearText, { yearText = it.filter(Char::isDigit).take(4) }, Modifier.fillMaxWidth(), label = { Text("Año contable") }, isError = yearError != null, supportingText = { yearError?.let { Text(it) } }, singleLine = true)
                 ExposedDropdownMenuBox(monthExpanded, { monthExpanded = !monthExpanded }) {
                     OutlinedTextField(
                         EconomyViewModel.formatMonth(selectedMonth),
@@ -229,7 +244,7 @@ private fun EconomyMovementDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
+            Button(enabled = yearError == null, onClick = {
                 val accountingMonth = selectedMonth.withYear(selectedYear)
                 viewModel.saveMovement(editing?.id, type, amount, categoryId, accountingMonth.atDay(1), onSaved = onDismiss)
             }) { Text("Guardar", fontWeight = FontWeight.Bold) }

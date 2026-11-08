@@ -12,6 +12,9 @@ interface EconomyRepository {
     fun observeCategories(): Flow<List<EconomyCategory>>
     fun observeMovements(): Flow<List<EconomyMovement>>
     fun observeMovements(month: YearMonth): Flow<List<EconomyMovement>>
+    fun observeMovementsBetween(start: YearMonth, end: YearMonth): Flow<List<EconomyMovement>>
+    fun observeAllMovements(): Flow<List<EconomyMovement>>
+    fun observeSettings(): Flow<EconomySettings>
     suspend fun getMovementsBetween(start: YearMonth, end: YearMonth): List<EconomyMovement>
     suspend fun getAllMovements(): List<EconomyMovement>
     suspend fun ensureDefaults()

@@ -111,10 +111,84 @@ class CasaMigrationTest {
         }
     }
 
+    @Test
+    fun migrateFromRoom41_copiesLatestTargetIntoExistingSettings() {
+        helper.createDatabase(ROOM41_SETTINGS_DB_NAME, 41).apply {
+            execSQL("INSERT INTO economy_settings (householdId, fiscalStartMonth, currency, updatedAt, version, updatedByDevice) VALUES ('house-41', 4, 'EUR', 10, 1, 'device-41')")
+            execSQL("INSERT INTO economy_monthly_targets (householdId, monthKey, targetCents, minimumCents, createdAt, updatedAt, version, updatedByDevice) VALUES ('house-41', '2026-01', 10000, 5000, 1, 20, 1, 'device-41')")
+            execSQL("INSERT INTO economy_monthly_targets (householdId, monthKey, targetCents, minimumCents, createdAt, updatedAt, version, updatedByDevice) VALUES ('house-41', '2026-02', 20000, 8000, 1, 30, 2, 'device-41')")
+            close()
+        }
+        helper.runMigrationsAndValidate(ROOM41_SETTINGS_DB_NAME, 42, true, *ALL_MIGRATIONS).use { database ->
+            database.query("SELECT fiscalStartMonth, targetCents, minimumCents FROM economy_settings WHERE householdId = 'house-41'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(4, cursor.getInt(0))
+                assertEquals(20000L, cursor.getLong(1))
+                assertEquals(8000L, cursor.getLong(2))
+            }
+        }
+    }
+
+    @Test
+    fun migrateFromRoom41_createsSettingsWhenOnlyTargetsExist() {
+        helper.createDatabase(ROOM41_TARGET_ONLY_DB_NAME, 41).apply {
+            execSQL("INSERT INTO economy_monthly_targets (householdId, monthKey, targetCents, minimumCents, createdAt, updatedAt, version, updatedByDevice) VALUES ('house-target', '2026-03', 15000, 6000, 1, 40, 1, 'device-target')")
+            close()
+        }
+        helper.runMigrationsAndValidate(ROOM41_TARGET_ONLY_DB_NAME, 42, true, *ALL_MIGRATIONS).use { database ->
+            database.query("SELECT targetCents, minimumCents FROM economy_settings WHERE householdId = 'house-target'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(15000L, cursor.getLong(0))
+                assertEquals(6000L, cursor.getLong(1))
+            }
+        }
+    }
+
+    @Test
+    fun migrateFromRoom41_keepsZeroDefaultsWithoutPreviousTargets() {
+        helper.createDatabase(ROOM41_EMPTY_ECONOMY_DB_NAME, 41).apply {
+            execSQL("INSERT INTO economy_settings (householdId, fiscalStartMonth, currency, updatedAt, version, updatedByDevice) VALUES ('house-empty', 1, 'EUR', 10, 1, 'device-empty')")
+            close()
+        }
+        helper.runMigrationsAndValidate(ROOM41_EMPTY_ECONOMY_DB_NAME, 42, true, *ALL_MIGRATIONS).use { database ->
+            database.query("SELECT targetCents, minimumCents FROM economy_settings WHERE householdId = 'house-empty'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(0L, cursor.getLong(0))
+                assertEquals(0L, cursor.getLong(1))
+            }
+        }
+    }
+
+    @Test
+    fun migrateFromRoom41_preservesMovementsAndUsesNewestTarget() {
+        helper.createDatabase(ROOM41_MOVEMENTS_DB_NAME, 41).apply {
+            execSQL("INSERT INTO economy_settings (householdId, fiscalStartMonth, currency, updatedAt, version, updatedByDevice) VALUES ('house-movements', 1, 'EUR', 10, 1, 'device-movements')")
+            execSQL("INSERT INTO economy_monthly_targets (householdId, monthKey, targetCents, minimumCents, createdAt, updatedAt, version, updatedByDevice) VALUES ('house-movements', '2026-01', 9000, 3000, 1, 20, 1, 'device-movements')")
+            execSQL("INSERT INTO economy_monthly_targets (householdId, monthKey, targetCents, minimumCents, createdAt, updatedAt, version, updatedByDevice) VALUES ('house-movements', '2026-02', 11000, 4000, 1, 30, 2, 'device-movements')")
+            execSQL("INSERT INTO economy_movements (id, householdId, type, amountCents, categoryId, dateEpochDay, deleted, createdAt, updatedAt, version, updatedByDevice) VALUES ('movement-41', 'house-movements', 'INCOME', 25000, 'category-41', 20000, 0, 1, 2, 1, 'device-movements')")
+            close()
+        }
+        helper.runMigrationsAndValidate(ROOM41_MOVEMENTS_DB_NAME, 42, true, *ALL_MIGRATIONS).use { database ->
+            database.query("SELECT COUNT(*) FROM economy_movements WHERE id = 'movement-41'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(1, cursor.getInt(0))
+            }
+            database.query("SELECT targetCents, minimumCents FROM economy_settings WHERE householdId = 'house-movements'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(11000L, cursor.getLong(0))
+                assertEquals(4000L, cursor.getLong(1))
+            }
+        }
+    }
+
     companion object {
         private const val DB_NAME = "casa-migration-test"
         private const val ROOM2_DB_NAME = "casa-migration-room2-test"
         private const val ROOM23_DB_NAME = "casa-migration-room23-test"
         private const val ROOM39_DB_NAME = "casa-migration-room39-test"
+        private const val ROOM41_SETTINGS_DB_NAME = "casa-migration-room41-settings-test"
+        private const val ROOM41_TARGET_ONLY_DB_NAME = "casa-migration-room41-target-only-test"
+        private const val ROOM41_EMPTY_ECONOMY_DB_NAME = "casa-migration-room41-empty-economy-test"
+        private const val ROOM41_MOVEMENTS_DB_NAME = "casa-migration-room41-movements-test"
     }
 }

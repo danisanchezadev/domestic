@@ -61,13 +61,13 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
         state.historyMovements.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == month }
     }
     val exerciseMovements = groups.values.flatten()
-    val visibleHistory = if (showAll) state.allHistoryMovements else state.historyMovements
+    val visibleHistory = if (showAll) state.allHistoryMovements else state.historyMonthMovements
     LaunchedEffect(selectedFiscalYear, state.settings.fiscalStartMonth, showAll) {
         if (showAll) viewModel.loadAllHistory() else viewModel.loadHistory(fiscalStart, fiscalStart.plusMonths(11))
     }
+    LaunchedEffect(selectedPeriod) { viewModel.loadHistoryMonth(selectedPeriod) }
     val filteredMovements = visibleHistory.filter { movement ->
-        (showAll || YearMonth.from(LocalDate.ofEpochDay(movement.dateEpochDay)) == selectedPeriod) &&
-            (typeFilter == null || movement.type == typeFilter) &&
+        (typeFilter == null || movement.type == typeFilter) &&
             (categoryFilter == null || movement.categoryId == categoryFilter)
     }
     val totals = EconomyCalculations.totals(exerciseMovements)
@@ -139,13 +139,14 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
             } else {
                 item { Card { Column(Modifier.padding(14.dp)) { MonthlySavingsChart(groups, state.target.targetCents, state.target.minimumCents) } } }
                 items(groups.toList(), key = { it.first.toString() }) { (month, values) ->
+                    val futureWithoutMovements = month > YearMonth.now() && values.isEmpty()
                     val monthIncome = values.filter { it.type == EconomyMovementType.INCOME }.sumOf { it.amountCents }
                     val monthExpense = values.filter { it.type == EconomyMovementType.EXPENSE }.sumOf { it.amountCents }
                     val monthInvestment = values.filter { it.type == EconomyMovementType.INVESTMENT }.sumOf { it.amountCents }
                     val monthSavings = monthlySavings(values)
-                    Card {
+                    Card(colors = CardDefaults.cardColors(containerColor = if (futureWithoutMovements) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surface)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(formatSpanishMonth(month), fontWeight = FontWeight.Bold)
+                            Text(if (futureWithoutMovements) "${formatSpanishMonth(month)} · Próximo" else formatSpanishMonth(month), fontWeight = FontWeight.Bold, color = if (futureWithoutMovements) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 CompactStat("Ingresos", monthIncome, Color(0xFF3B7A4A))
                                 CompactStat("Gastos", monthExpense, Color(0xFFC44646))
@@ -223,6 +224,7 @@ private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, t
             if (target != 0L) drawLine(Color(0xFF244C35), androidx.compose.ui.geometry.Offset(0f, yFor(target)), androidx.compose.ui.geometry.Offset(size.width, yFor(target)), 2f)
             if (minimum != 0L && minimum != target) drawLine(Color(0xFFD39A2C), androidx.compose.ui.geometry.Offset(0f, yFor(minimum)), androidx.compose.ui.geometry.Offset(size.width, yFor(minimum)), 2f)
             groups.entries.forEachIndexed { index, entry ->
+                if (entry.key > YearMonth.now() && entry.value.isEmpty()) return@forEachIndexed
                 val amount = monthlySavings(entry.value)
                 val height = size.height * kotlin.math.abs(amount).toFloat() / totalRange
                 val x = slot * index + (slot - barWidth) / 2f
