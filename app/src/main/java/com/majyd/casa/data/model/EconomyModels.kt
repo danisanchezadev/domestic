@@ -27,6 +27,8 @@ data class EconomyMonthlyTarget(
 data class EconomySettings(
     val fiscalStartMonth: Int = 1,
     val currency: String = "EUR",
+    val targetCents: Long = 0L,
+    val minimumCents: Long = 0L,
 )
 
 data class EconomyTotals(

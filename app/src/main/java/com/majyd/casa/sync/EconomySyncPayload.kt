@@ -10,7 +10,7 @@ data class EconomyMovementSyncPayload(val id: String, val householdId: String, v
 @Serializable
 data class EconomyTargetSyncPayload(val householdId: String, val monthKey: String, val targetCents: Long, val minimumCents: Long, val createdAt: Long, val updatedAt: Long, val version: Long, val updatedByDevice: String)
 @Serializable
-data class EconomySettingsSyncPayload(val householdId: String, val fiscalStartMonth: Int, val currency: String, val updatedAt: Long, val version: Long, val updatedByDevice: String)
+data class EconomySettingsSyncPayload(val householdId: String, val fiscalStartMonth: Int, val currency: String, val targetCents: Long = 0L, val minimumCents: Long = 0L, val updatedAt: Long, val version: Long, val updatedByDevice: String)
 
 object EconomySyncPayloadCodec {
     private val json = Json { ignoreUnknownKeys = true }

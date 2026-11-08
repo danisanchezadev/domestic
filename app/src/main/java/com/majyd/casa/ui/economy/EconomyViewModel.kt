@@ -19,12 +19,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class EconomyUiState(
     val categories: List<EconomyCategory> = emptyList(),
     val movements: List<EconomyMovement> = emptyList(),
+    val historyMovements: List<EconomyMovement> = emptyList(),
+    val allHistoryMovements: List<EconomyMovement> = emptyList(),
     val target: EconomyMonthlyTarget = EconomyMonthlyTarget(YearMonth.now().toString(), 0, 0),
     val settings: EconomySettings = EconomySettings(),
     val error: String? = null,
@@ -35,9 +38,14 @@ class EconomyViewModel @Inject constructor(private val repository: EconomyReposi
     private val target = MutableStateFlow(EconomyMonthlyTarget(YearMonth.now().toString(), 0, 0))
     private val error = MutableStateFlow<String?>(null)
     private val settings = MutableStateFlow(EconomySettings())
+    private val selectedMonth = MutableStateFlow(YearMonth.now())
+    private val historyMovements = MutableStateFlow<List<EconomyMovement>>(emptyList())
+    private val allHistoryMovements = MutableStateFlow<List<EconomyMovement>>(emptyList())
     private val categories = repository.observeCategories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    private val movements = repository.observeMovements().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val uiState: StateFlow<EconomyUiState> = combine(categories, movements, target, settings, error) { cats, values, goal, config, message -> EconomyUiState(cats, values, goal, config, message) }
+    private val movements = selectedMonth.flatMapLatest { repository.observeMovements(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val baseUiState = combine(categories, movements, historyMovements, target, settings) { cats, values, history, goal, config -> EconomyUiState(categories = cats, movements = values, historyMovements = history, target = goal, settings = config) }
+    private val historyState = combine(baseUiState, allHistoryMovements) { state, all -> state.copy(allHistoryMovements = all) }
+    val uiState: StateFlow<EconomyUiState> = combine(historyState, error) { state, message -> state.copy(error = message) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EconomyUiState())
 
     init {
@@ -49,8 +57,24 @@ class EconomyViewModel @Inject constructor(private val repository: EconomyReposi
     }
 
     fun clearError() { error.value = null }
-    fun loadTarget(month: YearMonth) { viewModelScope.launch { target.value = repository.getTarget(month.toString()) } }
+    fun loadTarget(month: YearMonth) { selectedMonth.value = month; viewModelScope.launch { target.value = repository.getTarget(month.toString()) } }
+    fun loadHistory() { loadHistory(YearMonth.now().minusMonths(11), YearMonth.now()) }
+    fun loadHistory(start: YearMonth, end: YearMonth) { viewModelScope.launch { historyMovements.value = repository.getMovementsBetween(start, end) } }
+    fun loadAllHistory() { viewModelScope.launch { allHistoryMovements.value = repository.getAllMovements() } }
     fun saveSettings(startMonth: Int) = viewModelScope.launch { settings.value = repository.saveSettings(settings.value.copy(fiscalStartMonth = startMonth.coerceIn(1, 12))) }
+
+    fun saveConfiguration(startMonth: Int, targetText: String, minimumText: String) = viewModelScope.launch {
+        val targetCents = parseCents(targetText)
+        val minimumCents = parseCents(minimumText)
+        if (targetCents == null || minimumCents == null || targetCents < 0 || minimumCents < 0 || minimumCents > targetCents) {
+            error.value = "El mínimo debe ser igual o menor que el objetivo."
+            return@launch
+        }
+        val saved = repository.saveSettings(settings.value.copy(fiscalStartMonth = startMonth.coerceIn(1, 12), targetCents = targetCents, minimumCents = minimumCents))
+        settings.value = saved
+        target.value = EconomyMonthlyTarget(target.value.monthKey, saved.targetCents, saved.minimumCents)
+        error.value = null
+    }
 
     fun saveMovement(id: String?, type: EconomyMovementType, amountText: String, categoryId: String, date: LocalDate = LocalDate.now(), onSaved: () -> Unit = {}) = viewModelScope.launch {
         val cents = parseCents(amountText)
@@ -72,6 +96,7 @@ class EconomyViewModel @Inject constructor(private val repository: EconomyReposi
             return@launch
         }
         target.value = repository.saveTarget(month.toString(), targetCents, minimumCents) ?: return@launch
+        settings.value = repository.getSettings()
         error.value = null
         onSaved()
     }

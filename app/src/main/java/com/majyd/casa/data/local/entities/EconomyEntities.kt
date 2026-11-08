@@ -59,6 +59,8 @@ data class EconomySettingsEntity(
     @androidx.room.PrimaryKey val householdId: String,
     val fiscalStartMonth: Int,
     val currency: String,
+    val targetCents: Long,
+    val minimumCents: Long,
     val updatedAt: Long,
     val version: Long,
     val updatedByDevice: String,

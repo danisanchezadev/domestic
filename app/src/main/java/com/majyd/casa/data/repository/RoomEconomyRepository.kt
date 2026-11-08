@@ -34,6 +34,9 @@ class RoomEconomyRepository @Inject constructor(
 ) : EconomyRepository {
     override fun observeCategories(): Flow<List<EconomyCategory>> = economyDao.observeCategories().map { it.map(::categoryModel) }
     override fun observeMovements(): Flow<List<EconomyMovement>> = economyDao.observeMovements().map { it.map(::movementModel) }
+    override fun observeMovements(month: java.time.YearMonth): Flow<List<EconomyMovement>> = economyDao.observeMovementsBetween(month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { it.map(::movementModel) }
+    override suspend fun getMovementsBetween(start: java.time.YearMonth, end: java.time.YearMonth): List<EconomyMovement> = economyDao.getMovementsBetween(start.atDay(1).toEpochDay(), end.atEndOfMonth().toEpochDay()).map(::movementModel)
+    override suspend fun getAllMovements(): List<EconomyMovement> = economyDao.getAllMovements().map(::movementModel)
 
     override suspend fun ensureDefaults() = database.withTransaction {
         val device = deviceManager.ensureDevice()
@@ -99,51 +102,46 @@ class RoomEconomyRepository @Inject constructor(
 
     override suspend fun getTarget(monthKey: String): EconomyMonthlyTarget = database.withTransaction {
         val device = deviceManager.ensureDevice()
-        val existing = economyDao.getTarget(device.householdId, monthKey)
-        if (existing != null) return@withTransaction EconomyMonthlyTarget(monthKey, existing.targetCents, existing.minimumCents)
-        val previous = economyDao.getTargets(device.householdId).firstOrNull()
-        val now = System.currentTimeMillis()
-        val entity = EconomyMonthlyTargetEntity(device.householdId, monthKey, previous?.targetCents ?: 0L, previous?.minimumCents ?: 0L, now, now, 1, device.deviceId)
-        economyDao.upsertTarget(entity)
-        enqueueTarget(entity, "CREATE")
-        EconomyMonthlyTarget(monthKey, entity.targetCents, entity.minimumCents)
+        val settings = economyDao.getSettings(device.householdId)
+        EconomyMonthlyTarget(monthKey, settings?.targetCents ?: 0L, settings?.minimumCents ?: 0L)
     }
 
     override suspend fun saveTarget(monthKey: String, targetCents: Long, minimumCents: Long): EconomyMonthlyTarget? = database.withTransaction {
         if (targetCents < 0 || minimumCents < 0 || minimumCents > targetCents) return@withTransaction null
         val device = deviceManager.ensureDevice()
-        val current = economyDao.getTarget(device.householdId, monthKey)
+        val currentSettings = economyDao.getSettings(device.householdId)
         val now = System.currentTimeMillis()
-        val entity = EconomyMonthlyTargetEntity(device.householdId, monthKey, targetCents, minimumCents, current?.createdAt ?: now, now, (current?.version ?: 0) + 1, device.deviceId)
-        economyDao.upsertTarget(entity)
-        enqueueTarget(entity, if (current == null) "CREATE" else "UPDATE")
+        val settings = EconomySettingsEntity(device.householdId, currentSettings?.fiscalStartMonth ?: 1, currentSettings?.currency ?: "EUR", targetCents, minimumCents, now, (currentSettings?.version ?: 0) + 1, device.deviceId)
+        economyDao.upsertSettings(settings)
+        enqueueSettings(settings, if (currentSettings == null) "CREATE" else "UPDATE")
         EconomyMonthlyTarget(monthKey, targetCents, minimumCents)
     }
 
     override suspend fun getSettings(): com.majyd.casa.data.model.EconomySettings = database.withTransaction {
         val device = deviceManager.ensureDevice()
         val existing = economyDao.getSettings(device.householdId)
-        if (existing != null) return@withTransaction com.majyd.casa.data.model.EconomySettings(existing.fiscalStartMonth, existing.currency)
+        if (existing != null) return@withTransaction com.majyd.casa.data.model.EconomySettings(existing.fiscalStartMonth, existing.currency, existing.targetCents, existing.minimumCents)
         val now = System.currentTimeMillis()
-        val created = EconomySettingsEntity(device.householdId, 1, "EUR", now, 1, device.deviceId)
+        val previousTarget = economyDao.getTargets(device.householdId).maxByOrNull { it.updatedAt }
+        val created = EconomySettingsEntity(device.householdId, 1, "EUR", previousTarget?.targetCents ?: 0L, previousTarget?.minimumCents ?: 0L, now, 1, device.deviceId)
         economyDao.upsertSettings(created)
         enqueueSettings(created, "CREATE")
-        com.majyd.casa.data.model.EconomySettings()
+        com.majyd.casa.data.model.EconomySettings(targetCents = created.targetCents, minimumCents = created.minimumCents)
     }
 
     override suspend fun saveSettings(settings: com.majyd.casa.data.model.EconomySettings): com.majyd.casa.data.model.EconomySettings = database.withTransaction {
         val device = deviceManager.ensureDevice()
         val current = economyDao.getSettings(device.householdId)
-        val updated = EconomySettingsEntity(device.householdId, settings.fiscalStartMonth.coerceIn(1, 12), "EUR", System.currentTimeMillis(), (current?.version ?: 0) + 1, device.deviceId)
+        val updated = EconomySettingsEntity(device.householdId, settings.fiscalStartMonth.coerceIn(1, 12), "EUR", settings.targetCents.coerceAtLeast(0L), settings.minimumCents.coerceAtLeast(0L), System.currentTimeMillis(), (current?.version ?: 0) + 1, device.deviceId)
         economyDao.upsertSettings(updated)
         enqueueSettings(updated, if (current == null) "CREATE" else "UPDATE")
-        com.majyd.casa.data.model.EconomySettings(updated.fiscalStartMonth, updated.currency)
+        com.majyd.casa.data.model.EconomySettings(updated.fiscalStartMonth, updated.currency, updated.targetCents, updated.minimumCents)
     }
 
     private suspend fun enqueueCategory(e: EconomyCategoryEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_category", e.id, EconomySyncPayloadCodec.encode(EconomyCategorySyncPayload(e.id, e.householdId, e.type, e.name, e.normalizedName, e.deleted, e.createdAt, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, e.deleted, operation)
     private suspend fun enqueueMovement(e: EconomyMovementEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_movement", e.id, EconomySyncPayloadCodec.encode(EconomyMovementSyncPayload(e.id, e.householdId, e.type, e.amountCents, e.categoryId, e.dateEpochDay, e.deleted, e.createdAt, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, e.deleted, operation)
     private suspend fun enqueueTarget(e: EconomyMonthlyTargetEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_target", "${e.householdId}:${e.monthKey}", EconomySyncPayloadCodec.encode(EconomyTargetSyncPayload(e.householdId, e.monthKey, e.targetCents, e.minimumCents, e.createdAt, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, false, operation)
-    private suspend fun enqueueSettings(e: EconomySettingsEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_settings", e.householdId, EconomySyncPayloadCodec.encode(EconomySettingsSyncPayload(e.householdId, e.fiscalStartMonth, e.currency, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, false, operation)
+    private suspend fun enqueueSettings(e: EconomySettingsEntity, operation: String) = syncOperationRepository.enqueue(e.householdId, e.updatedByDevice, "economy_settings", e.householdId, EconomySyncPayloadCodec.encode(EconomySettingsSyncPayload(e.householdId, e.fiscalStartMonth, e.currency, e.targetCents, e.minimumCents, e.updatedAt, e.version, e.updatedByDevice)), e.version, e.updatedAt, false, operation)
     private fun categoryModel(e: EconomyCategoryEntity) = EconomyCategory(e.id, runCatching { EconomyMovementType.valueOf(e.type) }.getOrDefault(EconomyMovementType.EXPENSE), e.name, e.deleted)
     private fun movementModel(e: EconomyMovementEntity) = EconomyMovement(e.id, runCatching { EconomyMovementType.valueOf(e.type) }.getOrDefault(EconomyMovementType.EXPENSE), e.amountCents, e.categoryId, e.dateEpochDay, e.deleted)
 }

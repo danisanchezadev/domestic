@@ -84,7 +84,7 @@ import com.majyd.casa.data.local.entities.EconomySettingsEntity
         EconomyMonthlyTargetEntity::class,
         EconomySettingsEntity::class,
     ],
-    version = 41,
+    version = 42,
     exportSchema = true,
 )
 abstract class CasaDatabase : RoomDatabase() {

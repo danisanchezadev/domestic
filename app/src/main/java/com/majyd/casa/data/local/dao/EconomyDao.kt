@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface EconomyDao {
-    @Query("SELECT * FROM economy_categories WHERE deleted = 0 AND householdId = (SELECT householdId FROM device_identity LIMIT 1) ORDER BY type ASC, name COLLATE NOCASE ASC")
+    @Query("SELECT * FROM economy_categories WHERE householdId = (SELECT householdId FROM device_identity LIMIT 1) ORDER BY type ASC, name COLLATE NOCASE ASC")
     fun observeCategories(): Flow<List<EconomyCategoryEntity>>
 
     @Query("SELECT * FROM economy_categories WHERE householdId = (SELECT householdId FROM device_identity LIMIT 1) ORDER BY type ASC, name COLLATE NOCASE ASC")
@@ -27,6 +27,15 @@ interface EconomyDao {
 
     @Query("SELECT * FROM economy_movements WHERE deleted = 0 AND householdId = (SELECT householdId FROM device_identity LIMIT 1) ORDER BY dateEpochDay DESC, createdAt DESC")
     fun observeMovements(): Flow<List<EconomyMovementEntity>>
+
+    @Query("SELECT * FROM economy_movements WHERE deleted = 0 AND householdId = (SELECT householdId FROM device_identity LIMIT 1) AND dateEpochDay BETWEEN :startEpochDay AND :endEpochDay ORDER BY dateEpochDay DESC, createdAt DESC")
+    fun observeMovementsBetween(startEpochDay: Long, endEpochDay: Long): Flow<List<EconomyMovementEntity>>
+
+    @Query("SELECT * FROM economy_movements WHERE deleted = 0 AND householdId = (SELECT householdId FROM device_identity LIMIT 1) AND dateEpochDay BETWEEN :startEpochDay AND :endEpochDay ORDER BY dateEpochDay DESC, createdAt DESC")
+    suspend fun getMovementsBetween(startEpochDay: Long, endEpochDay: Long): List<EconomyMovementEntity>
+
+    @Query("SELECT * FROM economy_movements WHERE deleted = 0 AND householdId = (SELECT householdId FROM device_identity LIMIT 1) ORDER BY dateEpochDay DESC, createdAt DESC")
+    suspend fun getAllMovements(): List<EconomyMovementEntity>
 
     @Query("SELECT * FROM economy_movements WHERE id = :id AND householdId = (SELECT householdId FROM device_identity LIMIT 1) LIMIT 1")
     suspend fun getMovement(id: String): EconomyMovementEntity?

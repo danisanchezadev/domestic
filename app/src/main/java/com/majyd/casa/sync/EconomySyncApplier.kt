@@ -70,7 +70,7 @@ class EconomySyncApplier @Inject constructor(
         val dao = database.economyDao()
         val local = dao.getSettings(p.householdId)
         if (local == null || conflictResolver.incomingWins(local.version, local.updatedAt, local.updatedByDevice, p.version, p.updatedAt, p.updatedByDevice.ifBlank { operation.deviceId })) {
-            dao.upsertSettings(EconomySettingsEntity(p.householdId, p.fiscalStartMonth.coerceIn(1, 12), p.currency, p.updatedAt, p.version, p.updatedByDevice.ifBlank { operation.deviceId }))
+            dao.upsertSettings(EconomySettingsEntity(p.householdId, p.fiscalStartMonth.coerceIn(1, 12), p.currency, p.targetCents.coerceAtLeast(0L), p.minimumCents.coerceAtLeast(0L), p.updatedAt, p.version, p.updatedByDevice.ifBlank { operation.deviceId }))
         }
         return true
     }

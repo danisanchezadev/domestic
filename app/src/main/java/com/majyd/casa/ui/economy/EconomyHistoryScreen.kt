@@ -17,8 +17,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +26,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,19 +51,21 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
     var typeFilter by remember { mutableStateOf<EconomyMovementType?>(null) }
     var categoryFilter by remember { mutableStateOf<String?>(null) }
     var selectedPeriod by remember { mutableStateOf(YearMonth.now()) }
-    var periodMenuOpen by remember { mutableStateOf(false) }
-    val periodOptions = remember { (0..36).map { YearMonth.now().minusMonths(24L - it) } }
     val currentMonth = YearMonth.now()
     val currentFiscalYear = if (currentMonth.monthValue >= state.settings.fiscalStartMonth) currentMonth.year else currentMonth.year - 1
     var selectedFiscalYear by remember(state.settings.fiscalStartMonth) { mutableStateOf(currentFiscalYear) }
-    var fiscalYearMenuOpen by remember { mutableStateOf(false) }
     val fiscalStart = YearMonth.of(selectedFiscalYear, state.settings.fiscalStartMonth)
+    val fiscalTitle = if (state.settings.fiscalStartMonth == 1) "$selectedFiscalYear" else "$selectedFiscalYear/${selectedFiscalYear + 1}"
     val fiscalMonths = (0..11).map { offset -> fiscalStart.plusMonths(offset.toLong()) }
     val groups = fiscalMonths.associateWith { month ->
-        state.movements.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == month }
+        state.historyMovements.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == month }
     }
     val exerciseMovements = groups.values.flatten()
-    val filteredMovements = state.movements.filter { movement ->
+    val visibleHistory = if (showAll) state.allHistoryMovements else state.historyMovements
+    LaunchedEffect(selectedFiscalYear, state.settings.fiscalStartMonth, showAll) {
+        if (showAll) viewModel.loadAllHistory() else viewModel.loadHistory(fiscalStart, fiscalStart.plusMonths(11))
+    }
+    val filteredMovements = visibleHistory.filter { movement ->
         (showAll || YearMonth.from(LocalDate.ofEpochDay(movement.dateEpochDay)) == selectedPeriod) &&
             (typeFilter == null || movement.type == typeFilter) &&
             (categoryFilter == null || movement.categoryId == categoryFilter)
@@ -74,7 +75,7 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
     val expense = totals.expenseCents
     val investment = totals.investmentCents
     val savings = totals.liquidityCents
-    val expenseByCategory = state.movements.filter { it.type == EconomyMovementType.EXPENSE }
+    val expenseByCategory = exerciseMovements.filter { it.type == EconomyMovementType.EXPENSE }
         .groupBy { it.categoryId }
         .mapValues { (_, values) -> values.sumOf { it.amountCents } }
         .toList()
@@ -106,13 +107,9 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
             }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Ejercicio $selectedFiscalYear/${selectedFiscalYear + 1}", fontWeight = FontWeight.ExtraBold)
-                    androidx.compose.material3.TextButton(onClick = { fiscalYearMenuOpen = true }) { Text("Cambiar") }
-                    DropdownMenu(expanded = fiscalYearMenuOpen, onDismissRequest = { fiscalYearMenuOpen = false }) {
-                        (currentFiscalYear - 5..currentFiscalYear + 1).forEach { year ->
-                            DropdownMenuItem(text = { Text("$year/${year + 1}") }, onClick = { selectedFiscalYear = year; fiscalYearMenuOpen = false })
-                        }
-                    }
+                    Text("Ejercicio $fiscalTitle", fontWeight = FontWeight.ExtraBold)
+                    androidx.compose.material3.TextButton(onClick = { selectedFiscalYear-- }) { Text("Anterior") }
+                    androidx.compose.material3.TextButton(onClick = { selectedFiscalYear++ }) { Text("Siguiente") }
                 }
             }
             item { SectionTitle("Ahorro mensual") }
@@ -120,13 +117,9 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(if (showAll) "Todos los movimientos" else "Movimientos de ${EconomyViewModel.formatMonth(selectedPeriod)}", fontWeight = FontWeight.Bold)
-                        androidx.compose.material3.TextButton(onClick = { periodMenuOpen = true }) { Text("Elegir mes") }
+                        androidx.compose.material3.TextButton(onClick = { selectedPeriod = selectedPeriod.minusMonths(1) }) { Text("Anterior") }
+                        androidx.compose.material3.TextButton(onClick = { selectedPeriod = selectedPeriod.plusMonths(1) }) { Text("Siguiente") }
                         androidx.compose.material3.TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "Ver mes actual" else "Ver todos") }
-                    }
-                    DropdownMenu(expanded = periodMenuOpen, onDismissRequest = { periodMenuOpen = false }) {
-                        periodOptions.forEach { period ->
-                            DropdownMenuItem(text = { Text(EconomyViewModel.formatMonth(period)) }, onClick = { selectedPeriod = period; showAll = false; periodMenuOpen = false })
-                        }
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = typeFilter == null, onClick = { typeFilter = null }, label = { Text("Todos") })
@@ -135,7 +128,7 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
                         }
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        state.categories.filter { it.id in state.movements.map { movement -> movement.categoryId }.toSet() }.forEach { category ->
+                        state.categories.filter { it.id in visibleHistory.map { movement -> movement.categoryId }.toSet() }.forEach { category ->
                             FilterChip(selected = categoryFilter == category.id, onClick = { categoryFilter = if (categoryFilter == category.id) null else category.id }, label = { Text(category.name) })
                         }
                     }
@@ -217,19 +210,21 @@ private fun SectionTitle(title: String) {
 @Composable
 private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, target: Long, minimum: Long) {
     val values = groups.values.map(::monthlySavings)
-    val maximum = (values + listOf(target, minimum)).maxOfOrNull { kotlin.math.abs(it) }?.coerceAtLeast(1L) ?: 1L
+    val positiveMaximum = (values.filter { it > 0L } + listOf(target, minimum).filter { it > 0L }).maxOrNull()?.coerceAtLeast(1L) ?: 1L
+    val negativeMaximum = values.filter { it < 0L }.minOrNull()?.let { kotlin.math.abs(it) }?.coerceAtLeast(1L) ?: 1L
+    val totalRange = (positiveMaximum + negativeMaximum).toFloat()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Canvas(Modifier.fillMaxWidth().height(190.dp)) {
-            val baseline = size.height / 2f
+            val baseline = size.height * positiveMaximum.toFloat() / totalRange
             val slot = size.width / groups.size.coerceAtLeast(1)
             val barWidth = (slot * 0.55f).coerceAtLeast(8f)
             drawLine(Color.Gray, androidx.compose.ui.geometry.Offset(0f, baseline), androidx.compose.ui.geometry.Offset(size.width, baseline), 2f)
-            fun yFor(value: Long): Float = baseline - (value.toFloat() / maximum.toFloat()) * baseline
+            fun yFor(value: Long): Float = baseline - (value.toFloat() / totalRange) * size.height
             if (target != 0L) drawLine(Color(0xFF244C35), androidx.compose.ui.geometry.Offset(0f, yFor(target)), androidx.compose.ui.geometry.Offset(size.width, yFor(target)), 2f)
             if (minimum != 0L && minimum != target) drawLine(Color(0xFFD39A2C), androidx.compose.ui.geometry.Offset(0f, yFor(minimum)), androidx.compose.ui.geometry.Offset(size.width, yFor(minimum)), 2f)
             groups.entries.forEachIndexed { index, entry ->
                 val amount = monthlySavings(entry.value)
-                val height = size.height / 2f * kotlin.math.abs(amount).toFloat() / maximum.toFloat()
+                val height = size.height * kotlin.math.abs(amount).toFloat() / totalRange
                 val x = slot * index + (slot - barWidth) / 2f
                 val top = if (amount >= 0) baseline - height else baseline
                 drawRect(if (amount >= 0) Color(0xFFB33A3A) else Color.Black, androidx.compose.ui.geometry.Offset(x, top), androidx.compose.ui.geometry.Size(barWidth, height))

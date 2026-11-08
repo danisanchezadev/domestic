@@ -163,14 +163,77 @@ private fun MovementRow(movement: EconomyMovement, categories: List<EconomyCateg
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EconomyMovementDialog(type: EconomyMovementType, editing: EconomyMovement?, defaultMonth: YearMonth, categories: List<EconomyCategory>, viewModel: EconomyViewModel, onDismiss: () -> Unit) {
+private fun EconomyMovementDialog(
+    type: EconomyMovementType,
+    editing: EconomyMovement?,
+    defaultMonth: YearMonth,
+    categories: List<EconomyCategory>,
+    viewModel: EconomyViewModel,
+    onDismiss: () -> Unit,
+) {
     var amount by remember(editing) { mutableStateOf(editing?.let { "%.2f".format(java.util.Locale.US, it.amountCents / 100.0) } ?: "") }
     var categoryId by remember(editing) { mutableStateOf(editing?.categoryId ?: categories.firstOrNull { it.type == type }?.id.orEmpty()) }
     var selectedMonth by remember(editing, defaultMonth) { mutableStateOf(editing?.let { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) } ?: defaultMonth) }
+    var yearText by remember(editing, defaultMonth) { mutableStateOf(selectedMonth.year.toString()) }
     var expanded by remember { mutableStateOf(false) }
     var monthExpanded by remember { mutableStateOf(false) }
     val options = categories.filter { it.type == type && !it.deleted }
-    val monthOptions = remember { (0..36).map { YearMonth.now().minusMonths(24L - it) } }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (type == EconomyMovementType.INCOME) "Nuevo ingreso" else if (type == EconomyMovementType.INVESTMENT) "Nueva inversión" else "Nuevo gasto", fontWeight = FontWeight.ExtraBold) }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text("Importe (€)") }, singleLine = true); ExposedDropdownMenuBox(expanded, { expanded = !expanded }) { OutlinedTextField(options.firstOrNull { it.id == categoryId }?.name.orEmpty(), {}, Modifier.menuAnchor().fillMaxWidth(), readOnly = true, label = { Text("Categoría") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }); ExposedDropdownMenu(expanded, { expanded = false }) { options.forEach { category -> DropdownMenuItem(text = { Text(category.name) }, onClick = { categoryId = category.id; expanded = false }) } } }; ExposedDropdownMenuBox(monthExpanded, { monthExpanded = !monthExpanded }) { OutlinedTextField(EconomyViewModel.formatMonth(selectedMonth), {}, Modifier.menuAnchor().fillMaxWidth(), readOnly = true, label = { Text("Mes contable") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(monthExpanded) }); ExposedDropdownMenu(monthExpanded, { monthExpanded = false }) { monthOptions.forEach { monthOption -> DropdownMenuItem(text = { Text(EconomyViewModel.formatMonth(monthOption)) }, onClick = { selectedMonth = monthOption; monthExpanded = false }) } } } } }, confirmButton = { Button(onClick = { viewModel.saveMovement(editing?.id, type, amount, categoryId, selectedMonth.atDay(1), onSaved = onDismiss) }) { Text("Guardar", fontWeight = FontWeight.Bold) } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
-}
+    val selectedYear = yearText.toIntOrNull()?.coerceIn(1, 9999) ?: selectedMonth.year
+    val monthOptions = (1..12).map { YearMonth.of(selectedYear, it) }
 
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (type == EconomyMovementType.INCOME) "Nuevo ingreso" else if (type == EconomyMovementType.INVESTMENT) "Nueva inversión" else "Nuevo gasto",
+                fontWeight = FontWeight.ExtraBold,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text("Importe (€)") }, singleLine = true)
+                ExposedDropdownMenuBox(expanded, { expanded = !expanded }) {
+                    OutlinedTextField(
+                        options.firstOrNull { it.id == categoryId }?.name.orEmpty(),
+                        {},
+                        Modifier.menuAnchor().fillMaxWidth(),
+                        readOnly = true,
+                        label = { Text("Categoría") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                    )
+                    ExposedDropdownMenu(expanded, { expanded = false }) {
+                        options.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = { categoryId = category.id; expanded = false })
+                        }
+                    }
+                }
+                OutlinedTextField(yearText, { yearText = it.filter(Char::isDigit).take(4) }, Modifier.fillMaxWidth(), label = { Text("Año contable") }, singleLine = true)
+                ExposedDropdownMenuBox(monthExpanded, { monthExpanded = !monthExpanded }) {
+                    OutlinedTextField(
+                        EconomyViewModel.formatMonth(selectedMonth),
+                        {},
+                        Modifier.menuAnchor().fillMaxWidth(),
+                        readOnly = true,
+                        label = { Text("Mes contable") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(monthExpanded) },
+                    )
+                    ExposedDropdownMenu(monthExpanded, { monthExpanded = false }) {
+                        monthOptions.forEach { monthOption ->
+                            DropdownMenuItem(
+                                text = { Text(EconomyViewModel.formatMonth(monthOption)) },
+                                onClick = { selectedMonth = monthOption; monthExpanded = false },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val accountingMonth = selectedMonth.withYear(selectedYear)
+                viewModel.saveMovement(editing?.id, type, amount, categoryId, accountingMonth.atDay(1), onSaved = onDismiss)
+            }) { Text("Guardar", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}

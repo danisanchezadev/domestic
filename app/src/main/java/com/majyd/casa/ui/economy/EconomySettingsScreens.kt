@@ -73,7 +73,7 @@ internal fun EconomySettingsScreen(state: EconomyUiState, viewModel: EconomyView
                         }
                     }
                 }
-                Button(onClick = { viewModel.saveTarget(target, minimum); viewModel.saveSettings(fiscalStartMonth) }, Modifier.fillMaxWidth()) { Text("Guardar objetivos", fontWeight = FontWeight.Bold) }
+                Button(onClick = { viewModel.saveConfiguration(fiscalStartMonth, target, minimum) }, Modifier.fillMaxWidth()) { Text("Guardar objetivos", fontWeight = FontWeight.Bold) }
                 Card(Modifier.fillMaxWidth()) { TextButton(onClick = onCategories, Modifier.fillMaxWidth().padding(8.dp)) { Text("Configurar categorías", fontWeight = FontWeight.Bold) } }
             }
         }
@@ -116,14 +116,24 @@ internal fun EconomyCategorySettingsScreen(state: EconomyUiState, viewModel: Eco
 private fun EconomyCategoryTypeScreen(state: EconomyUiState, viewModel: EconomyViewModel, type: EconomyMovementType, onBack: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var editingId by remember { mutableStateOf<String?>(null) }
+    var pendingArchive by remember { mutableStateOf<EconomyCategory?>(null) }
     val title = when (type) { EconomyMovementType.INCOME -> "Categorías de ingresos"; EconomyMovementType.EXPENSE -> "Categorías de gastos"; EconomyMovementType.INVESTMENT -> "Categorías de inversión" }
     Scaffold(containerColor = Color.Transparent, topBar = { TopAppBar(title = { Text(title, fontWeight = FontWeight.ExtraBold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Volver") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF8F1E8).copy(alpha = 0.94f))) }) { padding ->
         EconomyBackground {
             LazyColumn(Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item { Card(colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFF8F1E8).copy(alpha = 0.94f))) { Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) { OutlinedTextField(name, { name = it }, Modifier.weight(1f), label = { Text(if (editingId == null) "Nueva categoría" else "Editar categoría") }, singleLine = true); IconButton(onClick = { viewModel.saveCategory(editingId, type, name); name = ""; editingId = null }) { Icon(Icons.Filled.Add, "Guardar categoría") } } } }
-                items(state.categories.filter { it.type == type }) { category -> CategoryRow(category, onEdit = { editingId = category.id; name = category.name }, onDelete = { viewModel.archiveCategory(category) }) }
+                items(state.categories.filter { it.type == type }) { category -> CategoryRow(category, onEdit = { editingId = category.id; name = category.name }, onDelete = { pendingArchive = category }) }
             }
         }
+    }
+    pendingArchive?.let { category ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingArchive = null },
+            title = { Text("Archivar categoría", fontWeight = FontWeight.ExtraBold) },
+            text = { Text("Dejará de estar disponible para movimientos nuevos. Los movimientos anteriores conservarán esta categoría.") },
+            confirmButton = { Button(onClick = { viewModel.archiveCategory(category); pendingArchive = null }) { Text("Archivar") } },
+            dismissButton = { TextButton(onClick = { pendingArchive = null }) { Text("Cancelar") } },
+        )
     }
 }
 
