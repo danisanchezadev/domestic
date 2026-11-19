@@ -23,8 +23,8 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -43,6 +43,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -83,9 +85,9 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     var pendingDelete by remember { mutableStateOf<EconomyMovement?>(null) }
     var showPeriodPicker by remember { mutableStateOf(false) }
     var showLiquidityHelp by remember { mutableStateOf(false) }
-    var showFilters by remember { mutableStateOf(false) }
-    var typeFilter by remember { mutableStateOf<EconomyMovementType?>(null) }
-    var categoryFilter by remember { mutableStateOf<String?>(null) }
+    var showMovements by remember { mutableStateOf(false) }
+    var movementsInitialMonth by remember { mutableStateOf(YearMonth.now()) }
+    var movementsFromHistory by remember { mutableStateOf(false) }
     var selectedMonth by remember { mutableStateOf(YearMonth.now()) }
     var today by remember { mutableStateOf(LocalDate.now()) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { today = LocalDate.now() }
@@ -98,7 +100,21 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     }
     LaunchedEffect(selectedMonth) { viewModel.loadTarget(selectedMonth) }
     if (showHistory) {
-        EconomyHistoryScreen(state, viewModel, onBack = { showHistory = false })
+        EconomyHistoryScreen(
+            state,
+            viewModel,
+            onBack = { showHistory = false },
+            onOpenMovements = { month -> movementsInitialMonth = month; movementsFromHistory = true; showHistory = false; showMovements = true },
+        )
+        return
+    }
+    if (showMovements) {
+        EconomyMovementsScreen(
+            state = state,
+            viewModel = viewModel,
+            initialMonth = movementsInitialMonth,
+            onBack = { showMovements = false; if (movementsFromHistory) showHistory = true; movementsFromHistory = false },
+        )
         return
     }
     if (showSettings) {
@@ -111,10 +127,7 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     }
     val month = selectedMonth
     val monthMovements = state.movements.filter { LocalDate.ofEpochDay(it.dateEpochDay).let { date -> YearMonth.from(date) == month } }
-    val filteredMovements = monthMovements.filter { movement ->
-        (typeFilter == null || movement.type == typeFilter) &&
-            (categoryFilter == null || movement.categoryId == categoryFilter)
-    }
+    val latestMovements = latestEconomyMovements(monthMovements)
     val totals = EconomyCalculations.totals(monthMovements)
     val income = totals.incomeCents
     val expense = totals.expenseCents
@@ -135,10 +148,10 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
             if (month == YearMonth.from(today)) item { Text("Quedan $daysRemaining días para finalizar el mes", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold) }
             item { FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 2) { Button(onClick = { entryType = EconomyMovementType.INCOME }, Modifier.widthIn(min = 120.dp)) { Text("Ingreso", fontWeight = FontWeight.Bold, maxLines = 1) }; Button(onClick = { entryType = EconomyMovementType.EXPENSE }, Modifier.widthIn(min = 120.dp)) { Text("Gasto", fontWeight = FontWeight.Bold, maxLines = 1) }; Button(onClick = { entryType = EconomyMovementType.INVESTMENT }, Modifier.widthIn(min = 120.dp)) { Text("Inversión", fontWeight = FontWeight.Bold, maxLines = 1) } } }
             item { OutlinedButton(onClick = { showHistory = true }, Modifier.fillMaxWidth()) { Text("Histórico y estadísticas", fontWeight = FontWeight.Bold) } }
-            item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { Text("Movimientos de ${EconomyViewModel.formatMonth(month)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f)); TextButton(onClick = { showFilters = true }) { Icon(Icons.Filled.FilterList, null); Text(if (typeFilter != null || categoryFilter != null) "Filtros · activos" else "Filtros") } } }
-            if (monthMovements.isEmpty()) item { Text("Sin movimientos este mes", fontWeight = FontWeight.Bold) }
-            if (monthMovements.isNotEmpty() && filteredMovements.isEmpty()) item { Text("Ningún movimiento coincide con los filtros", fontWeight = FontWeight.Bold) }
-            items(filteredMovements) { movement -> MovementRow(movement, state.categories, onEdit = { editing = movement }, onDelete = { pendingDelete = movement }) }
+            item { Text("Últimos movimientos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold) }
+            if (latestMovements.isEmpty()) item { Text("Sin movimientos este mes", fontWeight = FontWeight.Bold) }
+            items(latestMovements) { movement -> MovementRow(movement, state.categories, onEdit = { editing = movement }, onDelete = { pendingDelete = movement }) }
+            item { OutlinedButton(onClick = { movementsInitialMonth = month; movementsFromHistory = false; showMovements = true }, Modifier.fillMaxWidth()) { Text("Ver más", fontWeight = FontWeight.Bold) } }
             }
         }
     }
@@ -154,7 +167,6 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
         )
     }
     if (showPeriodPicker) EconomyPeriodPickerDialog(month, onDismiss = { showPeriodPicker = false }, onSelected = { selectedMonth = it; showPeriodPicker = false })
-    if (showFilters) EconomyFiltersDialog(state.categories, monthMovements.map { it.categoryId }.toSet(), typeFilter, categoryFilter, onDismiss = { showFilters = false }, onApply = { type, category -> typeFilter = type; categoryFilter = category; showFilters = false })
     if (showLiquidityHelp) EconomyLiquidityHelpDialog(onDismiss = { showLiquidityHelp = false })
 }
 @Composable
@@ -191,7 +203,7 @@ private fun balanceLabel(balance: Long, target: Long, minimum: Long): String = w
     else -> "Por debajo del mínimo"
 }
 
-private fun economyTypeLabel(type: EconomyMovementType): String = when (type) {
+internal fun economyTypeLabel(type: EconomyMovementType): String = when (type) {
     EconomyMovementType.INCOME -> "Ingresos"
     EconomyMovementType.EXPENSE -> "Gastos"
     EconomyMovementType.INVESTMENT -> "Inversiones"
@@ -199,7 +211,7 @@ private fun economyTypeLabel(type: EconomyMovementType): String = when (type) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EconomyPeriodPickerDialog(current: YearMonth, onDismiss: () -> Unit, onSelected: (YearMonth) -> Unit) {
+internal fun EconomyPeriodPickerDialog(current: YearMonth, onDismiss: () -> Unit, onSelected: (YearMonth) -> Unit) {
     var yearText by remember(current) { mutableStateOf(current.year.toString()) }
     var month by remember(current) { mutableStateOf(current.monthValue) }
     var expanded by remember { mutableStateOf(false) }
@@ -225,12 +237,12 @@ private fun EconomyPeriodPickerDialog(current: YearMonth, onDismiss: () -> Unit,
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EconomyFiltersDialog(categories: List<EconomyCategory>, movementCategoryIds: Set<String>, type: EconomyMovementType?, category: String?, onDismiss: () -> Unit, onApply: (EconomyMovementType?, String?) -> Unit) {
+internal fun EconomyFiltersDialog(categories: List<EconomyCategory>, movementCategoryIds: Set<String>, type: EconomyMovementType?, category: String?, onDismiss: () -> Unit, onApply: (EconomyMovementType?, String?) -> Unit) {
     var selectedType by remember(type) { mutableStateOf(type) }
     var selectedCategory by remember(category) { mutableStateOf(category) }
     var categoryExpanded by remember { mutableStateOf(false) }
     val availableCategories = categories.filter { it.id in movementCategoryIds && (selectedType == null || it.type == selectedType) }
-    val selectedCategoryName = availableCategories.firstOrNull { it.id == selectedCategory }?.let { if (it.deleted) "${it.name} (archivada)" else it.name } ?: "Todas"
+    val selectedCategoryName = categories.firstOrNull { it.id == selectedCategory }?.let { if (it.deleted) "${it.name} (archivada)" else it.name } ?: "Todas"
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Filtros", fontWeight = FontWeight.ExtraBold) },
@@ -278,15 +290,32 @@ private fun EconomyLiquidityHelpDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun MovementRow(movement: EconomyMovement, categories: List<EconomyCategory>, onEdit: () -> Unit, onDelete: () -> Unit) {
+internal fun MovementRow(movement: EconomyMovement, categories: List<EconomyCategory>, onEdit: () -> Unit, onDelete: () -> Unit) {
     val category = categories.firstOrNull { it.id == movement.categoryId }?.name ?: "Categoría archivada"
     val amountColor = when (movement.type) { EconomyMovementType.INCOME -> Color(0xFF3B7A4A); EconomyMovementType.INVESTMENT -> Color(0xFF8E55B8); EconomyMovementType.EXPENSE -> Color(0xFFC44646) }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp)) { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(category, fontWeight = FontWeight.Bold); Text("Mes: ${EconomyViewModel.formatMonth(YearMonth.from(LocalDate.ofEpochDay(movement.dateEpochDay)))}", style = MaterialTheme.typography.bodySmall) }; Text((if (movement.type == EconomyMovementType.INCOME) "+" else "-") + EconomyViewModel.formatCents(movement.amountCents), color = amountColor, fontWeight = FontWeight.ExtraBold); IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Editar") }; IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) } } }
+    var menuExpanded by remember { mutableStateOf(false) }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(category, fontWeight = FontWeight.Bold)
+                Text(economyTypeLabel(movement.type), style = MaterialTheme.typography.bodySmall)
+                Text(EconomyViewModel.formatDate(movement.dateEpochDay), style = MaterialTheme.typography.bodySmall)
+            }
+            Text((if (movement.type == EconomyMovementType.INCOME) "+" else "-") + EconomyViewModel.formatCents(movement.amountCents), color = amountColor, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            Box {
+                IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Filled.MoreVert, "Acciones") }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Eliminar") }, onClick = { menuExpanded = false; onDelete() })
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EconomyMovementDialog(
+internal fun EconomyMovementDialog(
     type: EconomyMovementType,
     editing: EconomyMovement?,
     defaultMonth: YearMonth,

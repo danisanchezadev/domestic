@@ -69,4 +69,24 @@ class EconomyViewModelTest {
         assertTrue(large < veryLarge)
         assertTrue(veryLarge < 1f)
     }
+
+    @Test
+    fun movementOrderUsesDateThenStableIdDescending() {
+        val movements = listOf(
+            EconomyMovement("b", EconomyMovementType.EXPENSE, 100, "expense", 10),
+            EconomyMovement("a", EconomyMovementType.INCOME, 200, "income", 10),
+            EconomyMovement("c", EconomyMovementType.EXPENSE, 300, "expense", 11),
+        )
+
+        assertEquals(listOf("c", "b", "a"), sortEconomyMovements(movements).map { it.id })
+    }
+
+    @Test
+    fun latestMovementsAreLimitedToFiveAfterSorting() {
+        val movements = (1..7).map { day ->
+            EconomyMovement("movement-$day", EconomyMovementType.EXPENSE, day.toLong(), "expense", day.toLong())
+        }
+
+        assertEquals(listOf("movement-7", "movement-6", "movement-5", "movement-4", "movement-3"), latestEconomyMovements(movements).map { it.id })
+    }
 }

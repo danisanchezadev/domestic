@@ -23,6 +23,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -52,10 +53,16 @@ import java.util.Locale
 
 @Composable
 @androidx.compose.material3.ExperimentalMaterial3Api
-internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewModel, onBack: () -> Unit) {
+internal fun EconomyHistoryScreen(
+    state: EconomyUiState,
+    viewModel: EconomyViewModel,
+    onBack: () -> Unit,
+    onOpenMovements: (YearMonth) -> Unit,
+) {
     val currentMonth = YearMonth.now()
     val currentFiscalYear = if (currentMonth.monthValue >= state.settings.fiscalStartMonth) currentMonth.year else currentMonth.year - 1
     var selectedFiscalYear by remember(state.settings.fiscalStartMonth) { mutableStateOf(currentFiscalYear) }
+    var showCategoryExpenses by remember { mutableStateOf(false) }
     val fiscalStart = YearMonth.of(selectedFiscalYear, state.settings.fiscalStartMonth)
     val fiscalTitle = if (state.settings.fiscalStartMonth == 1) "$selectedFiscalYear" else "$selectedFiscalYear/${selectedFiscalYear + 1}"
     val fiscalMonths = (0..11).map { offset -> fiscalStart.plusMonths(offset.toLong()) }
@@ -64,18 +71,21 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
     }
     val exerciseMovements = groups.values.flatten()
     LaunchedEffect(selectedFiscalYear, state.settings.fiscalStartMonth) { viewModel.loadHistory(fiscalStart, fiscalStart.plusMonths(11)) }
+    if (showCategoryExpenses) {
+        EconomyCategoryExpensesScreen(
+            movements = exerciseMovements,
+            categories = state.categories,
+            fiscalTitle = fiscalTitle,
+            onBack = { showCategoryExpenses = false },
+        )
+        return
+    }
     val totals = EconomyCalculations.totals(exerciseMovements)
     val income = totals.incomeCents
     val expense = totals.expenseCents
     val investment = totals.investmentCents
     val savings = totals.liquidityCents
-    val expenseByCategory = exerciseMovements.filter { it.type == EconomyMovementType.EXPENSE }
-        .groupBy { it.categoryId }
-        .mapValues { (_, values) -> values.sumOf { it.amountCents } }
-        .toList()
-        .sortedByDescending { it.second }
     val displayGroups = groups.filter { (month, values) -> month <= currentMonth || values.isNotEmpty() }
-    val totalExpense = expenseByCategory.sumOf { it.second }.coerceAtLeast(1L)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -116,14 +126,8 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
                 item { SectionTitle("Resumen mensual") }
                 item { MonthlyEconomyTable(displayGroups) }
             }
-            if (expenseByCategory.isNotEmpty()) {
-                item { SectionTitle("Gastos por categoría") }
-                items(expenseByCategory, key = { it.first }) { (categoryId, amount) ->
-                    val name = state.categories.firstOrNull { it.id == categoryId }?.name ?: "Categoría archivada"
-                    val percentage = amount.toFloat() / totalExpense
-                    Card { Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(name, fontWeight = FontWeight.Bold); Text("${EconomyViewModel.formatCents(amount)} · ${(percentage * 100).toInt()}%", fontWeight = FontWeight.ExtraBold) }; androidx.compose.material3.LinearProgressIndicator(progress = { percentage.coerceIn(0f, 1f) }, Modifier.fillMaxWidth()) } }
-                }
-            }
+            item { OutlinedButton(onClick = { showCategoryExpenses = true }, Modifier.fillMaxWidth()) { Text("Gastos por categoría", fontWeight = FontWeight.Bold) } }
+            item { OutlinedButton(onClick = { onOpenMovements(fiscalStart) }, Modifier.fillMaxWidth()) { Text("Ver movimientos", fontWeight = FontWeight.Bold) } }
         }
     }
 }
@@ -239,7 +243,7 @@ private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, t
                     }
                 }
                 Row(Modifier.width(plotWidth)) {
-                    groups.keys.forEach { month -> Box(Modifier.width(monthWidth).padding(horizontal = 2.dp), contentAlignment = Alignment.Center) { Text(month.month.getDisplayName(TextStyle.SHORT, Locale("es", "ES")).replaceFirstChar { it.uppercase(Locale("es", "ES")) }, fontWeight = FontWeight.Bold, fontSize = 10.sp, maxLines = 1) } }
+                    groups.keys.forEach { month -> Box(Modifier.width(monthWidth).padding(horizontal = 2.dp), contentAlignment = Alignment.Center) { Text(month.monthValue.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp, maxLines = 1) } }
                 }
             }
         }
@@ -248,3 +252,49 @@ private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, t
 
 private fun formatSpanishMonth(month: YearMonth): String = month.month.getDisplayName(TextStyle.FULL, Locale("es", "ES"))
     .replaceFirstChar { it.uppercase(Locale("es", "ES")) } + " " + month.year
+
+@androidx.compose.material3.ExperimentalMaterial3Api
+@Composable
+private fun EconomyCategoryExpensesScreen(
+    movements: List<EconomyMovement>,
+    categories: List<com.majyd.casa.data.model.EconomyCategory>,
+    fiscalTitle: String,
+    onBack: () -> Unit,
+) {
+    val expenseByCategory = movements.filter { it.type == EconomyMovementType.EXPENSE }
+        .groupBy { it.categoryId }
+        .mapValues { (_, values) -> values.sumOf { it.amountCents } }
+        .toList()
+        .sortedByDescending { it.second }
+    val totalExpense = expenseByCategory.sumOf { it.second }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Gastos por categoría", fontWeight = FontWeight.ExtraBold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Volver") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            )
+        },
+    ) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { Text("Ejercicio $fiscalTitle", fontWeight = FontWeight.Bold) }
+            if (expenseByCategory.isEmpty()) {
+                item { Text("Sin gastos registrados en este ejercicio", fontWeight = FontWeight.Bold) }
+            } else {
+                items(expenseByCategory, key = { it.first }) { (categoryId, amount) ->
+                    val name = categories.firstOrNull { it.id == categoryId }?.let { if (it.deleted) "${it.name} (archivada)" else it.name } ?: "Categoría archivada"
+                    val percentage = amount.toFloat() / totalExpense.coerceAtLeast(1L)
+                    Card {
+                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(name, fontWeight = FontWeight.Bold)
+                                Text("${EconomyViewModel.formatCents(amount)} · ${(percentage * 100).toInt()}%", fontWeight = FontWeight.ExtraBold)
+                            }
+                            androidx.compose.material3.LinearProgressIndicator(progress = { percentage.coerceIn(0f, 1f) }, Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
