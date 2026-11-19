@@ -154,7 +154,7 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
         )
     }
     if (showPeriodPicker) EconomyPeriodPickerDialog(month, onDismiss = { showPeriodPicker = false }, onSelected = { selectedMonth = it; showPeriodPicker = false })
-    if (showFilters) EconomyFiltersDialog(state.categories, typeFilter, categoryFilter, onDismiss = { showFilters = false }, onApply = { type, category -> typeFilter = type; categoryFilter = category; showFilters = false })
+    if (showFilters) EconomyFiltersDialog(state.categories, monthMovements.map { it.categoryId }.toSet(), typeFilter, categoryFilter, onDismiss = { showFilters = false }, onApply = { type, category -> typeFilter = type; categoryFilter = category; showFilters = false })
     if (showLiquidityHelp) EconomyLiquidityHelpDialog(onDismiss = { showLiquidityHelp = false })
 }
 @Composable
@@ -162,7 +162,6 @@ private fun EconomyLiquidityBar(income: Long, balance: Long, target: Long, minim
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Liquidez", fontWeight = FontWeight.Bold)
                 IconButton(onClick = onHelp) { Icon(Icons.Filled.HelpOutline, "Ayuda sobre liquidez") }
             }
             Canvas(Modifier.fillMaxWidth().height(42.dp)) {
@@ -226,10 +225,12 @@ private fun EconomyPeriodPickerDialog(current: YearMonth, onDismiss: () -> Unit,
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EconomyFiltersDialog(categories: List<EconomyCategory>, type: EconomyMovementType?, category: String?, onDismiss: () -> Unit, onApply: (EconomyMovementType?, String?) -> Unit) {
+private fun EconomyFiltersDialog(categories: List<EconomyCategory>, movementCategoryIds: Set<String>, type: EconomyMovementType?, category: String?, onDismiss: () -> Unit, onApply: (EconomyMovementType?, String?) -> Unit) {
     var selectedType by remember(type) { mutableStateOf(type) }
     var selectedCategory by remember(category) { mutableStateOf(category) }
-    val availableCategories = categories.filter { !it.deleted && (selectedType == null || it.type == selectedType) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+    val availableCategories = categories.filter { it.id in movementCategoryIds && (selectedType == null || it.type == selectedType) }
+    val selectedCategoryName = availableCategories.firstOrNull { it.id == selectedCategory }?.let { if (it.deleted) "${it.name} (archivada)" else it.name } ?: "Todas"
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Filtros", fontWeight = FontWeight.ExtraBold) },
@@ -241,9 +242,12 @@ private fun EconomyFiltersDialog(categories: List<EconomyCategory>, type: Econom
                     EconomyMovementType.entries.forEach { value -> FilterChip(selectedType == value, { selectedType = if (selectedType == value) null else value; selectedCategory = null }, label = { Text(economyTypeLabel(value)) }) }
                 }
                 Text("Categoría", fontWeight = FontWeight.Bold)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selectedCategory == null, { selectedCategory = null }, label = { Text("Todas") })
-                    availableCategories.forEach { value -> FilterChip(selectedCategory == value.id, { selectedCategory = if (selectedCategory == value.id) null else value.id }, label = { Text(value.name) }) }
+                ExposedDropdownMenuBox(categoryExpanded, { categoryExpanded = !categoryExpanded }) {
+                    OutlinedTextField(selectedCategoryName, {}, Modifier.menuAnchor().fillMaxWidth(), readOnly = true, label = { Text("Categoría") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(categoryExpanded) })
+                    ExposedDropdownMenu(categoryExpanded, { categoryExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Todas") }, onClick = { selectedCategory = null; categoryExpanded = false })
+                        availableCategories.forEach { value -> DropdownMenuItem(text = { Text(if (value.deleted) "${value.name} (archivada)" else value.name) }, onClick = { selectedCategory = value.id; categoryExpanded = false }) }
+                    }
                 }
             }
         },

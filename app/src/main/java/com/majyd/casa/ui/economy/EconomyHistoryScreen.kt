@@ -1,7 +1,9 @@
 package com.majyd.casa.ui.economy
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -35,10 +36,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.majyd.casa.data.model.EconomyMovement
 import com.majyd.casa.data.model.EconomyCalculations
@@ -112,7 +114,7 @@ internal fun EconomyHistoryScreen(state: EconomyUiState, viewModel: EconomyViewM
                 item { SectionTitle("Ahorro mensual") }
                 item { Card { Column(Modifier.padding(14.dp)) { MonthlySavingsChart(displayGroups, state.target.targetCents, state.target.minimumCents) } } }
                 item { SectionTitle("Resumen mensual") }
-                item { MonthlyEconomyTable(displayGroups, savings) }
+                item { MonthlyEconomyTable(displayGroups) }
             }
             if (expenseByCategory.isNotEmpty()) {
                 item { SectionTitle("Gastos por categoría") }
@@ -134,12 +136,13 @@ private fun monthlySavings(values: List<EconomyMovement>): Long = values.sumOf {
 }
 
 @Composable
-private fun MonthlyEconomyTable(groups: Map<YearMonth, List<EconomyMovement>>, totalSavings: Long) {
+private fun MonthlyEconomyTable(groups: Map<YearMonth, List<EconomyMovement>>) {
     val scrollState = rememberScrollState()
     val totalValues = groups.values.flatten()
     val totalIncome = totalValues.filter { it.type == EconomyMovementType.INCOME }.sumOf { it.amountCents }
     val totalExpense = totalValues.filter { it.type == EconomyMovementType.EXPENSE }.sumOf { it.amountCents }
     val totalInvestment = totalValues.filter { it.type == EconomyMovementType.INVESTMENT }.sumOf { it.amountCents }
+    val totalSavings = totalIncome - totalExpense - totalInvestment
     Column(Modifier.horizontalScroll(scrollState)) {
         Row(Modifier.width(620.dp)) {
             TableCell("Mes", 92.dp, true)
@@ -194,43 +197,51 @@ private fun SectionTitle(title: String) {
 @Composable
 private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, target: Long, minimum: Long) {
     val values = groups.values.map(::monthlySavings)
-    val positiveMaximum = (values.filter { it > 0L } + listOf(target, minimum).filter { it > 0L }).maxOrNull()?.coerceAtLeast(1L) ?: 1L
-    val negativeMaximum = values.filter { it < 0L }.minOrNull()?.let { kotlin.math.abs(it) }?.coerceAtLeast(1L) ?: 1L
-    val totalRange = (positiveMaximum + negativeMaximum).toFloat()
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Canvas(Modifier.fillMaxWidth().height(190.dp)) {
-            val baseline = size.height * positiveMaximum.toFloat() / totalRange
-            val slot = size.width / groups.size.coerceAtLeast(1)
-            val barWidth = (slot * 0.55f).coerceAtLeast(8f)
-            drawLine(Color.Gray, androidx.compose.ui.geometry.Offset(0f, baseline), androidx.compose.ui.geometry.Offset(size.width, baseline), 2f)
-            fun yFor(value: Long): Float = baseline - (value.toFloat() / totalRange) * size.height
-            if (target != 0L) drawLine(Color(0xFF244C35), androidx.compose.ui.geometry.Offset(0f, yFor(target)), androidx.compose.ui.geometry.Offset(size.width, yFor(target)), 2f)
-            if (minimum != 0L && minimum != target) drawLine(Color(0xFFD39A2C), androidx.compose.ui.geometry.Offset(0f, yFor(minimum)), androidx.compose.ui.geometry.Offset(size.width, yFor(minimum)), 2f)
-            drawIntoCanvas { canvas ->
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                    color = android.graphics.Color.DKGRAY
-                    textSize = 11.dp.toPx()
-                    typeface = android.graphics.Typeface.DEFAULT_BOLD
-                }
-                canvas.nativeCanvas.drawText("0 €", 4f, baseline - 4f, paint)
-                if (target == minimum && target != 0L) {
-                    canvas.nativeCanvas.drawText("Objetivo/mínimo ${EconomyViewModel.formatCents(target)}", 4f, yFor(target) - 4f, paint)
-                } else {
-                    if (target != 0L) canvas.nativeCanvas.drawText("Objetivo ${EconomyViewModel.formatCents(target)}", 4f, yFor(target) - 4f, paint)
-                    if (minimum != 0L) canvas.nativeCanvas.drawText("Mínimo ${EconomyViewModel.formatCents(minimum)}", 4f, yFor(minimum) - 4f, paint)
+    val positiveMaximum = maxOf(values.filter { it > 0L }.maxOfOrNull { it.toDouble() } ?: 0.0, target.toDouble().coerceAtLeast(0.0), minimum.toDouble().coerceAtLeast(0.0), 1.0)
+    val negativeMaximum = maxOf(values.filter { it < 0L }.maxOfOrNull { kotlin.math.abs(it.toDouble()) } ?: 0.0, 1.0)
+    val totalRange = positiveMaximum + negativeMaximum
+    val baselineFraction = positiveMaximum / totalRange
+    val plotHeight = 180.dp
+    val labelWidth = 112.dp
+    val monthWidth = 58.dp
+    val plotWidth = monthWidth * groups.size.coerceAtLeast(1)
+    val scrollState = rememberScrollState()
+    fun fractionFor(value: Long): Float = (baselineFraction - value.toDouble() / totalRange).toFloat().coerceIn(0f, 1f)
+    val targetFraction = fractionFor(target)
+    val minimumFraction = fractionFor(minimum)
+    val minimumLabelFraction = if (target != 0L && minimum != 0L && kotlin.math.abs(targetFraction - minimumFraction) < 0.10f) (minimumFraction + 0.10f).coerceIn(0.04f, 0.96f) else minimumFraction
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            Box(Modifier.width(labelWidth).height(plotHeight)) {
+                Text("0 €", Modifier.align(Alignment.TopEnd).offset(y = (baselineFraction * plotHeight.value).dp - 8.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (target == minimum && target != 0L) Text("Obj./mín. ${EconomyViewModel.formatCents(target)}", Modifier.align(Alignment.TopEnd).offset(y = (targetFraction * plotHeight.value).dp - 8.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                else {
+                    if (target != 0L) Text("Obj. ${EconomyViewModel.formatCents(target)}", Modifier.align(Alignment.TopEnd).offset(y = (targetFraction * plotHeight.value).dp - 8.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (minimum != 0L) Text("Mín. ${EconomyViewModel.formatCents(minimum)}", Modifier.align(Alignment.TopEnd).offset(y = (minimumLabelFraction * plotHeight.value).dp - 8.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            groups.entries.forEachIndexed { index, entry ->
-                if (entry.key > YearMonth.now() && entry.value.isEmpty()) return@forEachIndexed
-                val amount = monthlySavings(entry.value)
-                val height = size.height * kotlin.math.abs(amount).toFloat() / totalRange
-                val x = slot * index + (slot - barWidth) / 2f
-                val top = if (amount >= 0) baseline - height else baseline
-                drawRect(if (amount >= 0) Color(0xFFB33A3A) else Color.Black, androidx.compose.ui.geometry.Offset(x, top), androidx.compose.ui.geometry.Size(barWidth, height))
+            Box(Modifier.weight(1f).horizontalScroll(scrollState)) {
+                Canvas(Modifier.width(plotWidth).height(plotHeight)) {
+                    val baseline = size.height * baselineFraction.toFloat()
+                    val slot = size.width / groups.size.coerceAtLeast(1)
+                    val barWidth = (slot * 0.55f).coerceAtLeast(8f)
+                    fun yFor(value: Long): Float = size.height * fractionFor(value)
+                    drawLine(Color.Gray, androidx.compose.ui.geometry.Offset(0f, baseline), androidx.compose.ui.geometry.Offset(size.width, baseline), 2f)
+                    if (target != 0L) drawLine(Color(0xFF244C35), androidx.compose.ui.geometry.Offset(0f, yFor(target)), androidx.compose.ui.geometry.Offset(size.width, yFor(target)), 2f)
+                    if (minimum != 0L && minimum != target) drawLine(Color(0xFFD39A2C), androidx.compose.ui.geometry.Offset(0f, yFor(minimum)), androidx.compose.ui.geometry.Offset(size.width, yFor(minimum)), 2f)
+                    groups.entries.forEachIndexed { index, entry ->
+                        if (entry.key > YearMonth.now() && entry.value.isEmpty()) return@forEachIndexed
+                        val amount = monthlySavings(entry.value)
+                        val barHeight = size.height * kotlin.math.abs(amount.toDouble() / totalRange).toFloat()
+                        val x = slot * index + (slot - barWidth) / 2f
+                        val top = if (amount >= 0) baseline - barHeight else baseline
+                        drawRect(if (amount >= 0) Color(0xFFB33A3A) else Color.Black, androidx.compose.ui.geometry.Offset(x, top), androidx.compose.ui.geometry.Size(barWidth, barHeight))
+                    }
+                }
+                Row(Modifier.width(plotWidth)) {
+                    groups.keys.forEach { month -> Box(Modifier.width(monthWidth).padding(horizontal = 2.dp), contentAlignment = Alignment.Center) { Text(month.month.getDisplayName(TextStyle.SHORT, Locale("es", "ES")).replaceFirstChar { it.uppercase(Locale("es", "ES")) }, fontWeight = FontWeight.Bold, fontSize = 10.sp, maxLines = 1) } }
+                }
             }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            groups.keys.forEach { month -> Text(month.month.getDisplayName(TextStyle.SHORT, Locale("es", "ES")).replaceFirstChar { it.uppercase(Locale("es", "ES")) }, fontWeight = FontWeight.Bold) }
         }
     }
 }
