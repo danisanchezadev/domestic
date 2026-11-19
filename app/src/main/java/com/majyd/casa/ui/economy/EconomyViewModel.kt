@@ -21,13 +21,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class EconomyUiState(
     val categories: List<EconomyCategory> = emptyList(),
     val movements: List<EconomyMovement> = emptyList(),
+    val movementsMonth: YearMonth? = null,
     val historyMovements: List<EconomyMovement> = emptyList(),
+    val historyRange: Pair<YearMonth, YearMonth>? = null,
     val historyMonthMovements: List<EconomyMovement> = emptyList(),
     val allHistoryMovements: List<EconomyMovement> = emptyList(),
     val target: EconomyMonthlyTarget = EconomyMonthlyTarget(YearMonth.now().toString(), 0, 0),
@@ -43,20 +46,29 @@ class EconomyViewModel @Inject constructor(private val repository: EconomyReposi
     private val historyMonth = MutableStateFlow(YearMonth.now())
     private val allHistoryRequested = MutableStateFlow(false)
     private val categories = repository.observeCategories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    private val movements = selectedMonth.flatMapLatest { repository.observeMovements(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val movements = selectedMonth.flatMapLatest { month -> repository.observeMovements(month).map { month to it } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val settings = repository.observeSettings().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EconomySettings())
     private val target = combine(settings, selectedMonth) { config, month -> EconomyMonthlyTarget(month.toString(), config.targetCents, config.minimumCents) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EconomyMonthlyTarget(YearMonth.now().toString(), 0, 0))
     private val historyMovements = historyRange.flatMapLatest { range ->
-        range?.let { repository.observeMovementsBetween(it.first, it.second) } ?: flowOf(emptyList())
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        range?.let { selectedRange -> repository.observeMovementsBetween(selectedRange.first, selectedRange.second).map { selectedRange to it } }
+            ?: flowOf(null)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val historyMonthMovements = historyMonth.flatMapLatest { repository.observeMovements(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val allHistoryMovements = allHistoryRequested.flatMapLatest { requested ->
         if (requested) repository.observeAllMovements() else flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    private val baseDataState = combine(categories, movements, historyMovements, historyMonthMovements) { cats, values, history, historyMonthValues ->
-        EconomyUiState(categories = cats, movements = values, historyMovements = history, historyMonthMovements = historyMonthValues)
+    private val baseDataState = combine(categories, movements, historyMovements, historyMonthMovements) { cats, movementResult, historyResult, historyMonthValues ->
+        EconomyUiState(
+            categories = cats,
+            movements = movementResult?.second.orEmpty(),
+            movementsMonth = movementResult?.first,
+            historyMovements = historyResult?.second.orEmpty(),
+            historyRange = historyResult?.first,
+            historyMonthMovements = historyMonthValues,
+        )
     }
     private val baseTargetState = combine(baseDataState, target) { state, goal -> state.copy(target = goal) }
     private val baseUiState = combine(baseTargetState, settings) { state, config -> state.copy(settings = config) }

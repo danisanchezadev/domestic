@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -52,6 +53,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
@@ -61,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -88,6 +91,8 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     var showMovements by remember { mutableStateOf(false) }
     var movementsInitialMonth by remember { mutableStateOf(YearMonth.now()) }
     var movementsFromHistory by remember { mutableStateOf(false) }
+    val currentFiscalYear = if (YearMonth.now().monthValue >= state.settings.fiscalStartMonth) YearMonth.now().year else YearMonth.now().year - 1
+    var historyFiscalYear by rememberSaveable(state.settings.fiscalStartMonth) { mutableStateOf(currentFiscalYear) }
     var selectedMonth by remember { mutableStateOf(YearMonth.now()) }
     var today by remember { mutableStateOf(LocalDate.now()) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { today = LocalDate.now() }
@@ -105,6 +110,8 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
             viewModel,
             onBack = { showHistory = false },
             onOpenMovements = { month -> movementsInitialMonth = month; movementsFromHistory = true; showHistory = false; showMovements = true },
+            selectedFiscalYear = historyFiscalYear,
+            onFiscalYearChange = { historyFiscalYear = it },
         )
         return
     }
@@ -126,7 +133,8 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
         return
     }
     val month = selectedMonth
-    val monthMovements = state.movements.filter { LocalDate.ofEpochDay(it.dateEpochDay).let { date -> YearMonth.from(date) == month } }
+    val movementsLoaded = state.movementsMonth == month
+    val monthMovements = if (movementsLoaded) state.movements else emptyList()
     val latestMovements = latestEconomyMovements(monthMovements)
     val totals = EconomyCalculations.totals(monthMovements)
     val income = totals.incomeCents
@@ -142,15 +150,18 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
         EconomyBackground {
             LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = { selectedMonth = selectedMonth.minusMonths(1) }) { Icon(Icons.Filled.ChevronLeft, "Mes anterior") }; Text(EconomyViewModel.formatMonth(month), Modifier.clickable { showPeriodPicker = true }.padding(horizontal = 12.dp), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis); IconButton(onClick = { selectedMonth = selectedMonth.plusMonths(1) }) { Icon(Icons.Filled.ChevronRight, "Mes siguiente") } } }
-            item { Card(colors = CardDefaults.cardColors(containerColor = status.copy(alpha = 0.16f)), shape = RoundedCornerShape(22.dp)) { Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(EconomyViewModel.formatMonth(month), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold); Box(Modifier.fillMaxWidth()) { Text(EconomyViewModel.formatCents(balance), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = when { EconomyViewModel.formatCents(balance).length > 16 -> 32.sp; EconomyViewModel.formatCents(balance).length > 12 -> 40.sp; else -> 56.sp }, fontWeight = FontWeight.ExtraBold, color = status, maxLines = 1, softWrap = false) }; Text(balanceLabel(balance, state.target.targetCents, state.target.minimumCents), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text("Ingresos\n${EconomyViewModel.formatCents(income)}", color = Color(0xFF3B7A4A), fontWeight = FontWeight.Bold); Text("Gastos\n${EconomyViewModel.formatCents(expense)}", color = Color(0xFFC44646), fontWeight = FontWeight.Bold); Text("Inversión\n${EconomyViewModel.formatCents(investment)}", color = Color(0xFF8E55B8), fontWeight = FontWeight.Bold) } } } }
-            item { Text("Margen hasta el objetivo: ${EconomyViewModel.formatCents(balance - state.target.targetCents)}", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold, color = status) }
-            item { EconomyLiquidityBar(income, balance, state.target.targetCents, state.target.minimumCents, status, onHelp = { showLiquidityHelp = true }) }
+            item { EconomyMonthlySummary(month, balance, income, expense, investment, state.target.targetCents, state.target.minimumCents, status, movementsLoaded) }
+            if (movementsLoaded) {
+                item { Text("Margen hasta el objetivo: ${EconomyViewModel.formatCents(balance - state.target.targetCents)}", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold, color = status) }
+                item { EconomyLiquidityBar(income, balance, state.target.targetCents, state.target.minimumCents, status, onHelp = { showLiquidityHelp = true }) }
+            }
             if (month == YearMonth.from(today)) item { Text("Quedan $daysRemaining días para finalizar el mes", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold) }
-            item { FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 2) { Button(onClick = { entryType = EconomyMovementType.INCOME }, Modifier.widthIn(min = 120.dp)) { Text("Ingreso", fontWeight = FontWeight.Bold, maxLines = 1) }; Button(onClick = { entryType = EconomyMovementType.EXPENSE }, Modifier.widthIn(min = 120.dp)) { Text("Gasto", fontWeight = FontWeight.Bold, maxLines = 1) }; Button(onClick = { entryType = EconomyMovementType.INVESTMENT }, Modifier.widthIn(min = 120.dp)) { Text("Inversión", fontWeight = FontWeight.Bold, maxLines = 1) } } }
+            item { EconomyEntryButtons(onSelect = { entryType = it }) }
             item { OutlinedButton(onClick = { showHistory = true }, Modifier.fillMaxWidth()) { Text("Histórico y estadísticas", fontWeight = FontWeight.Bold) } }
             item { Text("Últimos movimientos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold) }
-            if (latestMovements.isEmpty()) item { Text("Sin movimientos este mes", fontWeight = FontWeight.Bold) }
-            items(latestMovements) { movement -> MovementRow(movement, state.categories, onEdit = { editing = movement }, onDelete = { pendingDelete = movement }) }
+            if (!movementsLoaded) item { Text("Cargando movimientos…", fontWeight = FontWeight.Bold) }
+            else if (latestMovements.isEmpty()) item { Text("Sin movimientos este mes", fontWeight = FontWeight.Bold) }
+            else items(latestMovements) { movement -> MovementRow(movement, state.categories, onEdit = { editing = movement }, onDelete = { pendingDelete = movement }) }
             item { OutlinedButton(onClick = { movementsInitialMonth = month; movementsFromHistory = false; showMovements = true }, Modifier.fillMaxWidth()) { Text("Ver más", fontWeight = FontWeight.Bold) } }
             }
         }
@@ -201,6 +212,113 @@ private fun balanceLabel(balance: Long, target: Long, minimum: Long): String = w
     balance >= target -> "Objetivo alcanzado"
     balance >= minimum -> "Mínimo aceptable alcanzado"
     else -> "Por debajo del mínimo"
+}
+
+@Composable
+private fun EconomyMonthlySummary(
+    month: YearMonth,
+    balance: Long,
+    income: Long,
+    expense: Long,
+    investment: Long,
+    target: Long,
+    minimum: Long,
+    status: Color,
+    loaded: Boolean,
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = status.copy(alpha = 0.16f)), shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(EconomyViewModel.formatMonth(month), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold)
+            if (loaded) {
+                Box(Modifier.fillMaxWidth()) {
+                    Text(
+                        EconomyViewModel.formatCents(balance),
+                        Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        fontSize = when {
+                            EconomyViewModel.formatCents(balance).length > 16 -> 32.sp
+                            EconomyViewModel.formatCents(balance).length > 12 -> 40.sp
+                            else -> 56.sp
+                        },
+                        fontWeight = FontWeight.ExtraBold,
+                        color = status,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+                Text(balanceLabel(balance, target, minimum), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold)
+                EconomySummaryAmounts(income, expense, investment, Modifier.padding(horizontal = 18.dp))
+            } else {
+                Text("Cargando movimientos…", Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EconomySummaryAmounts(income: Long, expense: Long, investment: Long, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val fontScale = LocalDensity.current.fontScale
+        val compact = maxWidth < 380.dp || fontScale > 1.25f
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SummaryAmount("Ingresos", income, Color(0xFF3B7A4A))
+                SummaryAmount("Gastos", expense, Color(0xFFC44646))
+                SummaryAmount("Inversión", investment, Color(0xFF8E55B8))
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                SummaryAmount("Ingresos", income, Color(0xFF3B7A4A))
+                SummaryAmount("Gastos", expense, Color(0xFFC44646))
+                SummaryAmount("Inversión", investment, Color(0xFF8E55B8))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryAmount(label: String, amount: Long, color: Color) {
+    Column {
+        Text(label, color = color, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(EconomyViewModel.formatCents(amount), color = color, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+internal fun EconomyEntryButtons(onSelect: (EconomyMovementType) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val fontScale = LocalDensity.current.fontScale
+        val oneColumn = maxWidth < 360.dp || fontScale > 1.25f
+        val twoRows = !oneColumn && maxWidth < 480.dp
+        if (oneColumn) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                EconomyEntryButton("Ingreso", EconomyMovementType.INCOME, onSelect)
+                EconomyEntryButton("Gasto", EconomyMovementType.EXPENSE, onSelect)
+                EconomyEntryButton("Inversión", EconomyMovementType.INVESTMENT, onSelect)
+            }
+        } else if (twoRows) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    EconomyEntryButton("Ingreso", EconomyMovementType.INCOME, onSelect, Modifier.weight(1f))
+                    EconomyEntryButton("Gasto", EconomyMovementType.EXPENSE, onSelect, Modifier.weight(1f))
+                }
+                EconomyEntryButton("Inversión", EconomyMovementType.INVESTMENT, onSelect, Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                EconomyEntryButton("Ingreso", EconomyMovementType.INCOME, onSelect, Modifier.weight(1f))
+                EconomyEntryButton("Gasto", EconomyMovementType.EXPENSE, onSelect, Modifier.weight(1f))
+                EconomyEntryButton("Inversión", EconomyMovementType.INVESTMENT, onSelect, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun EconomyEntryButton(label: String, type: EconomyMovementType, onSelect: (EconomyMovementType) -> Unit, modifier: Modifier = Modifier) {
+    Button(onClick = { onSelect(type) }, modifier = modifier) {
+        Text(label, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+    }
 }
 
 internal fun economyTypeLabel(type: EconomyMovementType): String = when (type) {
@@ -301,7 +419,9 @@ internal fun MovementRow(movement: EconomyMovement, categories: List<EconomyCate
                 Text(economyTypeLabel(movement.type), style = MaterialTheme.typography.bodySmall)
                 Text(EconomyViewModel.formatDate(movement.dateEpochDay), style = MaterialTheme.typography.bodySmall)
             }
-            Text((if (movement.type == EconomyMovementType.INCOME) "+" else "-") + EconomyViewModel.formatCents(movement.amountCents), color = amountColor, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            Column(Modifier.widthIn(max = 160.dp), horizontalAlignment = Alignment.End) {
+                Text((if (movement.type == EconomyMovementType.INCOME) "+" else "-") + EconomyViewModel.formatCents(movement.amountCents), color = amountColor, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End)
+            }
             Box {
                 IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Filled.MoreVert, "Acciones") }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {

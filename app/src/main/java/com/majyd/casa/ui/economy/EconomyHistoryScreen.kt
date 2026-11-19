@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -58,10 +59,10 @@ internal fun EconomyHistoryScreen(
     viewModel: EconomyViewModel,
     onBack: () -> Unit,
     onOpenMovements: (YearMonth) -> Unit,
+    selectedFiscalYear: Int,
+    onFiscalYearChange: (Int) -> Unit,
 ) {
     val currentMonth = YearMonth.now()
-    val currentFiscalYear = if (currentMonth.monthValue >= state.settings.fiscalStartMonth) currentMonth.year else currentMonth.year - 1
-    var selectedFiscalYear by remember(state.settings.fiscalStartMonth) { mutableStateOf(currentFiscalYear) }
     var showCategoryExpenses by remember { mutableStateOf(false) }
     val fiscalStart = YearMonth.of(selectedFiscalYear, state.settings.fiscalStartMonth)
     val fiscalTitle = if (state.settings.fiscalStartMonth == 1) "$selectedFiscalYear" else "$selectedFiscalYear/${selectedFiscalYear + 1}"
@@ -69,8 +70,14 @@ internal fun EconomyHistoryScreen(
     val groups = fiscalMonths.associateWith { month ->
         state.historyMovements.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == month }
     }
-    val exerciseMovements = groups.values.flatten()
+    val requestedRange = fiscalStart to fiscalStart.plusMonths(11)
+    val historyReady = state.historyRange == requestedRange
+    val exerciseMovements = if (historyReady) groups.values.flatten() else emptyList()
     LaunchedEffect(selectedFiscalYear, state.settings.fiscalStartMonth) { viewModel.loadHistory(fiscalStart, fiscalStart.plusMonths(11)) }
+    if (!historyReady) {
+        EconomyHistoryLoadingScreen(onBack)
+        return
+    }
     if (showCategoryExpenses) {
         EconomyCategoryExpensesScreen(
             movements = exerciseMovements,
@@ -85,7 +92,7 @@ internal fun EconomyHistoryScreen(
     val expense = totals.expenseCents
     val investment = totals.investmentCents
     val savings = totals.liquidityCents
-    val displayGroups = groups.filter { (month, values) -> month <= currentMonth || values.isNotEmpty() }
+    val displayGroups = displayableEconomyMonths(groups, currentMonth)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -103,9 +110,9 @@ internal fun EconomyHistoryScreen(
         ) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                    IconButton(onClick = { selectedFiscalYear-- }) { Icon(Icons.Filled.ChevronLeft, "Ejercicio anterior") }
+                    IconButton(onClick = { onFiscalYearChange(selectedFiscalYear - 1) }) { Icon(Icons.Filled.ChevronLeft, "Ejercicio anterior") }
                     Text("Ejercicio $fiscalTitle", Modifier.padding(horizontal = 10.dp), fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                    IconButton(onClick = { selectedFiscalYear++ }) { Icon(Icons.Filled.ChevronRight, "Ejercicio siguiente") }
+                    IconButton(onClick = { onFiscalYearChange(selectedFiscalYear + 1) }) { Icon(Icons.Filled.ChevronRight, "Ejercicio siguiente") }
                 }
             }
             item {
@@ -118,7 +125,9 @@ internal fun EconomyHistoryScreen(
                     }
                 }
             }
-            if (displayGroups.isEmpty()) {
+            if (!historyReady) {
+                item { Text("Cargando histórico…", fontWeight = FontWeight.Bold) }
+            } else if (displayGroups.isEmpty()) {
                 item { Text("Sin movimientos registrados", fontWeight = FontWeight.Bold) }
             } else {
                 item { SectionTitle("Ahorro mensual") }
@@ -136,6 +145,29 @@ private fun monthlySavings(values: List<EconomyMovement>): Long = values.sumOf {
     when (it.type) {
         EconomyMovementType.INCOME -> it.amountCents
         EconomyMovementType.EXPENSE, EconomyMovementType.INVESTMENT -> -it.amountCents
+    }
+}
+
+internal fun displayableEconomyMonths(
+    groups: Map<YearMonth, List<EconomyMovement>>,
+    currentMonth: YearMonth,
+): Map<YearMonth, List<EconomyMovement>> = groups.filter { (month, values) -> month <= currentMonth || values.isNotEmpty() }
+
+@androidx.compose.material3.ExperimentalMaterial3Api
+@Composable
+private fun EconomyHistoryLoadingScreen(onBack: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Histórico y estadísticas", fontWeight = FontWeight.ExtraBold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Volver") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.Center) {
+            Text("Cargando histórico…", fontWeight = FontWeight.Bold)
+        }
     }
 }
 
@@ -286,9 +318,9 @@ private fun EconomyCategoryExpensesScreen(
                     val percentage = amount.toFloat() / totalExpense.coerceAtLeast(1L)
                     Card {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(name, fontWeight = FontWeight.Bold)
-                                Text("${EconomyViewModel.formatCents(amount)} · ${(percentage * 100).toInt()}%", fontWeight = FontWeight.ExtraBold)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+                                Text(name, Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 2)
+                                Text("${EconomyViewModel.formatCents(amount)} · ${(percentage * 100).toInt()}%", Modifier.widthIn(min = 88.dp), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End)
                             }
                             androidx.compose.material3.LinearProgressIndicator(progress = { percentage.coerceIn(0f, 1f) }, Modifier.fillMaxWidth())
                         }

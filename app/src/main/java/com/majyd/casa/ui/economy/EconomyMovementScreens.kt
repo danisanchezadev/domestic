@@ -57,7 +57,7 @@ internal fun EconomyMovementsScreen(
     var pendingDelete by remember { mutableStateOf<EconomyMovement?>(null) }
 
     LaunchedEffect(month) { viewModel.loadTarget(month) }
-    val loaded = state.target.monthKey == month.toString()
+    val loaded = state.movementsMonth == month
     val monthMovements = if (loaded) state.movements else emptyList()
     val filtered = monthMovements.filter { movement ->
         (typeFilter == null || movement.type == typeFilter) &&
@@ -84,7 +84,7 @@ internal fun EconomyMovementsScreen(
             }
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("${monthMovements.size} movimientos", fontWeight = FontWeight.Bold)
                         Text("Balance ${EconomyViewModel.formatCents(totals.liquidityCents)}", fontWeight = FontWeight.ExtraBold)
                     }

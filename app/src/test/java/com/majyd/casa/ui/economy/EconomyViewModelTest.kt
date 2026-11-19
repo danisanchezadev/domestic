@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.YearMonth
 import com.majyd.casa.data.model.EconomyCalculations
 import com.majyd.casa.data.model.EconomyMovement
 import com.majyd.casa.data.model.EconomyMovementType
@@ -88,5 +89,18 @@ class EconomyViewModelTest {
         }
 
         assertEquals(listOf("movement-7", "movement-6", "movement-5", "movement-4", "movement-3"), latestEconomyMovements(movements).map { it.id })
+    }
+
+    @Test
+    fun futureEmptyMonthsAreExcludedButFutureMonthsWithMovementsRemain() {
+        val current = YearMonth.of(2026, 6)
+        val groups = linkedMapOf(
+            YearMonth.of(2026, 5) to emptyList(),
+            YearMonth.of(2026, 6) to emptyList(),
+            YearMonth.of(2026, 7) to listOf(EconomyMovement("future", EconomyMovementType.INCOME, 100, "income", 1)),
+            YearMonth.of(2026, 8) to emptyList(),
+        )
+
+        assertEquals(listOf(5, 6, 7), displayableEconomyMonths(groups, current).keys.map { it.monthValue })
     }
 }
