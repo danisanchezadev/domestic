@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -83,6 +85,7 @@ internal fun EconomyHistoryScreen(
         EconomyCategoryExpensesScreen(
             movements = exerciseMovements,
             categories = state.categories,
+            fiscalStart = fiscalStart,
             fiscalTitle = fiscalTitle,
             onBack = { showCategoryExpenses = false },
         )
@@ -297,14 +300,20 @@ private fun formatSpanishMonth(month: YearMonth): String = month.month.getDispla
 private fun EconomyCategoryExpensesScreen(
     movements: List<EconomyMovement>,
     categories: List<com.majyd.casa.data.model.EconomyCategory>,
+    fiscalStart: YearMonth,
     fiscalTitle: String,
     onBack: () -> Unit,
 ) {
-    val expenseByCategory = movements.filter { it.type == EconomyMovementType.EXPENSE }
+    var selectedPeriod by remember { mutableStateOf<YearMonth?>(null) }
+    var periodExpanded by remember { mutableStateOf(false) }
+    val periodMovements = selectedPeriod?.let { selected ->
+        movements.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == selected }
+    } ?: movements
+    val expenseByCategory = periodMovements.filter { it.type == EconomyMovementType.EXPENSE }
         .groupBy { it.categoryId }
         .mapValues { (_, values) -> values.sumOf { it.amountCents } }
         .toList()
-        .sortedByDescending { it.second }
+        .sortedWith(compareByDescending<Pair<String, Long>> { it.second }.thenBy { it.first })
     val totalExpense = expenseByCategory.sumOf { it.second }
     Scaffold(
         topBar = {
@@ -317,9 +326,30 @@ private fun EconomyCategoryExpensesScreen(
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { Text("Ejercicio $fiscalTitle", fontWeight = FontWeight.Bold) }
+            item {
+                Box {
+                    OutlinedButton(onClick = { periodExpanded = true }) {
+                        Text(selectedPeriod?.let(EconomyViewModel::formatMonth) ?: "Ejercicio completo", fontWeight = FontWeight.Bold)
+                    }
+                    DropdownMenu(expanded = periodExpanded, onDismissRequest = { periodExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Ejercicio completo") },
+                            onClick = { selectedPeriod = null; periodExpanded = false },
+                        )
+                        (0..11).forEach { offset ->
+                            val option = fiscalStart.plusMonths(offset.toLong())
+                            DropdownMenuItem(
+                                text = { Text(EconomyViewModel.formatMonth(option)) },
+                                onClick = { selectedPeriod = option; periodExpanded = false },
+                            )
+                        }
+                    }
+                }
+            }
             if (expenseByCategory.isEmpty()) {
                 item { Text("Sin gastos registrados en este ejercicio", fontWeight = FontWeight.Bold) }
             } else {
+                item { CategoryExpenseChart(expenseByCategory, categories) }
                 items(expenseByCategory, key = { it.first }) { (categoryId, amount) ->
                     val name = categories.firstOrNull { it.id == categoryId }?.let { if (it.deleted) "${it.name} (archivada)" else it.name } ?: "Categoría archivada"
                     val percentage = amount.toFloat() / totalExpense.coerceAtLeast(1L)
@@ -340,6 +370,67 @@ private fun EconomyCategoryExpensesScreen(
                                 }
                             }
                             androidx.compose.material3.LinearProgressIndicator(progress = { percentage.coerceIn(0f, 1f) }, Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryExpenseChart(
+    expenseByCategory: List<Pair<String, Long>>,
+    categories: List<com.majyd.casa.data.model.EconomyCategory>,
+) {
+    val scrollState = rememberScrollState()
+    val slotWidth = 92.dp
+    val chartHeight = 190.dp
+    val chartWidth = slotWidth * expenseByCategory.size.coerceAtLeast(1)
+    val maximum = expenseByCategory.maxOfOrNull { it.second }?.coerceAtLeast(1L) ?: 1L
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Comparativa de gastos", fontWeight = FontWeight.ExtraBold)
+            Row(Modifier.fillMaxWidth().horizontalScroll(scrollState)) {
+                Column(Modifier.width(chartWidth)) {
+                    Canvas(Modifier.width(chartWidth).height(chartHeight)) {
+                        val slot = size.width / expenseByCategory.size.coerceAtLeast(1)
+                        val barWidth = (slot * 0.58f).coerceAtLeast(22f)
+                        expenseByCategory.forEachIndexed { index, (_, amount) ->
+                            val height = size.height * (amount.toFloat() / maximum.toFloat())
+                            val x = slot * index + (slot - barWidth) / 2f
+                            val top = size.height - height
+                            drawRoundRect(
+                                color = Color(0xFFC44646),
+                                topLeft = androidx.compose.ui.geometry.Offset(x, top),
+                                size = androidx.compose.ui.geometry.Size(barWidth, height),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(14f, 14f),
+                            )
+                        }
+                    }
+                    Row(Modifier.width(chartWidth)) {
+                        expenseByCategory.forEach { (_, amount) ->
+                            Text(
+                                EconomyViewModel.formatCents(amount),
+                                Modifier.width(slotWidth).padding(horizontal = 2.dp),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    Row(Modifier.width(chartWidth)) {
+                        expenseByCategory.forEach { (categoryId, _) ->
+                            val name = categories.firstOrNull { it.id == categoryId }?.name ?: "Archivada"
+                            Text(
+                                name,
+                                Modifier.width(slotWidth).padding(horizontal = 4.dp),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                            )
                         }
                     }
                 }

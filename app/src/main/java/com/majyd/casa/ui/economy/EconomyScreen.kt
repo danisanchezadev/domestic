@@ -142,6 +142,7 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     val expense = totals.expenseCents
     val investment = totals.investmentCents
     val balance = totals.liquidityCents
+    val isFutureMonth = isFutureEconomyMonth(month, YearMonth.from(today))
     val daysRemaining = month.lengthOfMonth() - today.dayOfMonth + 1
     val status = when { balance >= state.target.targetCents -> Color(0xFF3B7A4A); balance >= state.target.minimumCents -> Color(0xFFD39A2C); balance >= 0L -> Color(0xFFD66A24); else -> Color(0xFFC44646) }
     Scaffold(
@@ -151,19 +152,19 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
         EconomyBackground {
             LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = { selectedMonth = selectedMonth.minusMonths(1) }) { Icon(Icons.Filled.ChevronLeft, "Mes anterior") }; Text(EconomyViewModel.formatMonth(month), Modifier.clickable { showPeriodPicker = true }.padding(horizontal = 12.dp), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis); IconButton(onClick = { selectedMonth = selectedMonth.plusMonths(1) }) { Icon(Icons.Filled.ChevronRight, "Mes siguiente") } } }
-            item { EconomyMonthlySummary(month, balance, income, expense, investment, state.target.targetCents, state.target.minimumCents, status, movementsLoaded) }
-            if (movementsLoaded) {
+            item { if (isFutureMonth) EconomyFutureSummary(month) else EconomyMonthlySummary(month, balance, income, expense, investment, status, movementsLoaded) }
+            if (movementsLoaded && !isFutureMonth) {
                 item { Text("Margen hasta el objetivo: ${EconomyViewModel.formatCents(balance - state.target.targetCents)}", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold, color = status) }
                 item { EconomyLiquidityBar(income, balance, state.target.targetCents, state.target.minimumCents, status, onHelp = { showLiquidityHelp = true }) }
             }
             if (month == YearMonth.from(today)) item { Text("Quedan $daysRemaining días para finalizar el mes", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold) }
             item { EconomyEntryButtons(onSelect = { entryType = it }) }
-            item { OutlinedButton(onClick = { showHistory = true }, Modifier.fillMaxWidth()) { Text("Histórico y estadísticas", fontWeight = FontWeight.Bold) } }
             item { Text("Últimos movimientos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold) }
             if (!movementsLoaded) item { Text("Cargando movimientos…", fontWeight = FontWeight.Bold) }
             else if (latestMovements.isEmpty()) item { Text("Sin movimientos este mes", fontWeight = FontWeight.Bold) }
             else items(latestMovements) { movement -> MovementRow(movement, state.categories, onEdit = { editing = movement }, onDelete = { pendingDelete = movement }) }
             item { OutlinedButton(onClick = { movementsInitialMonth = month; movementsFromHistory = false; showMovements = true }, Modifier.fillMaxWidth()) { Text("Ver más", fontWeight = FontWeight.Bold) } }
+            item { Button(onClick = { showHistory = true }, Modifier.fillMaxWidth()) { Text("Histórico y estadísticas", fontWeight = FontWeight.Bold) } }
             }
         }
     }
@@ -181,14 +182,13 @@ fun EconomyScreen(onBack: () -> Unit, viewModel: EconomyViewModel = hiltViewMode
     if (showPeriodPicker) EconomyPeriodPickerDialog(month, onDismiss = { showPeriodPicker = false }, onSelected = { selectedMonth = it; showPeriodPicker = false })
     if (showLiquidityHelp) EconomyLiquidityHelpDialog(onDismiss = { showLiquidityHelp = false })
 }
+internal fun isFutureEconomyMonth(selected: YearMonth, current: YearMonth): Boolean = selected > current
+
 @Composable
 private fun EconomyLiquidityBar(income: Long, balance: Long, target: Long, minimum: Long, status: Color, onHelp: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                IconButton(onClick = onHelp) { Icon(Icons.Filled.HelpOutline, "Ayuda sobre liquidez") }
-            }
-            Canvas(Modifier.fillMaxWidth().height(42.dp)) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Canvas(Modifier.weight(1f).height(42.dp)) {
                 val safeIncome = income.coerceAtLeast(1L).toFloat()
                 val positiveScale = (balance.coerceAtLeast(0L).toFloat() / safeIncome).coerceIn(0f, 1f)
                 val negativeScale = EconomyCalculations.negativeLiquidityScale(balance)
@@ -204,15 +204,9 @@ private fun EconomyLiquidityBar(income: Long, balance: Long, target: Long, minim
                     drawRoundRect(Color(0xFFC44646), size = androidx.compose.ui.geometry.Size(size.width * negativeScale, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f, 12f))
                 }
             }
+            IconButton(onClick = onHelp) { Icon(Icons.Filled.HelpOutline, "Ayuda sobre liquidez") }
         }
     }
-}
-
-private fun balanceLabel(balance: Long, target: Long, minimum: Long): String = when {
-    balance < 0L -> "Liquidez negativa"
-    balance >= target -> "Objetivo alcanzado"
-    balance >= minimum -> "Mínimo aceptable alcanzado"
-    else -> "Por debajo del mínimo"
 }
 
 @Composable
@@ -222,8 +216,6 @@ private fun EconomyMonthlySummary(
     income: Long,
     expense: Long,
     investment: Long,
-    target: Long,
-    minimum: Long,
     status: Color,
     loaded: Boolean,
 ) {
@@ -234,11 +226,27 @@ private fun EconomyMonthlySummary(
                 Box(Modifier.fillMaxWidth()) {
                     AdaptiveMoneyText(EconomyViewModel.formatCents(balance), status)
                 }
-                Text(balanceLabel(balance, target, minimum), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold)
                 EconomySummaryAmounts(income, expense, investment, Modifier.padding(horizontal = 18.dp))
             } else {
                 Text("Cargando movimientos…", Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold)
             }
+        }
+    }
+}
+
+@Composable
+private fun EconomyFutureSummary(month: YearMonth) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(EconomyViewModel.formatMonth(month), fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+            Text("Este mes todavía no ha comenzado", fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
     }
 }
@@ -298,7 +306,7 @@ private fun SummaryAmount(label: String, amount: Long, color: Color, modifier: M
 internal fun EconomyEntryButtons(onSelect: (EconomyMovementType) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val fontScale = LocalDensity.current.fontScale
-        val oneColumn = maxWidth < 360.dp || fontScale > 1.25f
+        val oneColumn = fontScale > 1.25f
         val twoRows = !oneColumn && maxWidth < 480.dp
         if (oneColumn) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {

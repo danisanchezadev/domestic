@@ -103,4 +103,12 @@ class EconomyViewModelTest {
 
         assertEquals(listOf(5, 6, 7), displayableEconomyMonths(groups, current).keys.map { it.monthValue })
     }
+
+    @Test
+    fun futureMonthPresentationDependsOnlyOnYearMonth() {
+        val current = YearMonth.of(2026, 11)
+        assertTrue(isFutureEconomyMonth(YearMonth.of(2026, 12), current))
+        assertTrue(!isFutureEconomyMonth(current, current))
+        assertTrue(!isFutureEconomyMonth(YearMonth.of(2026, 10), current))
+    }
 }
