@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -40,10 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import com.majyd.casa.data.model.EconomyMovement
 import com.majyd.casa.data.model.EconomyCalculations
 import com.majyd.casa.data.model.EconomyMovementType
@@ -238,25 +239,22 @@ private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, t
     val totalRange = positiveMaximum + negativeMaximum
     val baselineFraction = positiveMaximum / totalRange
     val plotHeight = 180.dp
-    val labelWidth = 112.dp
     val monthWidth = 58.dp
     val plotWidth = monthWidth * groups.size.coerceAtLeast(1)
     val scrollState = rememberScrollState()
     fun fractionFor(value: Long): Float = (baselineFraction - value.toDouble() / totalRange).toFloat().coerceIn(0f, 1f)
-    val targetFraction = fractionFor(target)
-    val minimumFraction = fractionFor(minimum)
-    val minimumLabelFraction = if (target != 0L && minimum != 0L && kotlin.math.abs(targetFraction - minimumFraction) < 0.10f) (minimumFraction + 0.10f).coerceIn(0.04f, 0.96f) else minimumFraction
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth()) {
-            Box(Modifier.width(labelWidth).height(plotHeight)) {
-                Text("0 €", Modifier.align(Alignment.TopEnd).offset(y = (baselineFraction * plotHeight.value).dp - 8.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (target == minimum && target != 0L) Text("Obj./mín. ${EconomyViewModel.formatCents(target)}", Modifier.align(Alignment.TopEnd).offset(y = (targetFraction * plotHeight.value).dp - 8.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                else {
-                    if (target != 0L) Text("Obj. ${EconomyViewModel.formatCents(target)}", Modifier.align(Alignment.TopEnd).offset(y = (targetFraction * plotHeight.value).dp - 8.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (minimum != 0L) Text("Mín. ${EconomyViewModel.formatCents(minimum)}", Modifier.align(Alignment.TopEnd).offset(y = (minimumLabelFraction * plotHeight.value).dp - 8.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ReferenceLegend("0", Color.Gray)
+            if (target == minimum && target != 0L) ReferenceLegend("Objetivo/mínimo ${EconomyViewModel.formatCents(target)}", Color(0xFF244C35))
+            else {
+                if (target != 0L) ReferenceLegend("Objetivo ${EconomyViewModel.formatCents(target)}", Color(0xFF244C35))
+                if (minimum != 0L) ReferenceLegend("Mínimo ${EconomyViewModel.formatCents(minimum)}", Color(0xFFD39A2C))
             }
+        }
+        Row(Modifier.fillMaxWidth()) {
             Box(Modifier.weight(1f).horizontalScroll(scrollState)) {
+                Column(Modifier.width(plotWidth)) {
                 Canvas(Modifier.width(plotWidth).height(plotHeight)) {
                     val baseline = size.height * baselineFraction.toFloat()
                     val slot = size.width / groups.size.coerceAtLeast(1)
@@ -277,8 +275,17 @@ private fun MonthlySavingsChart(groups: Map<YearMonth, List<EconomyMovement>>, t
                 Row(Modifier.width(plotWidth)) {
                     groups.keys.forEach { month -> Box(Modifier.width(monthWidth).padding(horizontal = 2.dp), contentAlignment = Alignment.Center) { Text(month.monthValue.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp, maxLines = 1) } }
                 }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ReferenceLegend(label: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.width(18.dp).height(3.dp).background(color))
+        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -318,9 +325,19 @@ private fun EconomyCategoryExpensesScreen(
                     val percentage = amount.toFloat() / totalExpense.coerceAtLeast(1L)
                     Card {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                val compact = maxWidth < 360.dp || LocalDensity.current.fontScale > 1.25f
+                                if (compact) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(name, fontWeight = FontWeight.Bold)
+                                        Text("${EconomyViewModel.formatCents(amount)} · ${(percentage * 100).toInt()}%", fontWeight = FontWeight.ExtraBold)
+                                    }
+                                } else {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
                                 Text(name, Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 2)
-                                Text("${EconomyViewModel.formatCents(amount)} · ${(percentage * 100).toInt()}%", Modifier.widthIn(min = 88.dp), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End)
+                                Text("${EconomyViewModel.formatCents(amount)} · ${(percentage * 100).toInt()}%", fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End)
+                            }
+                                }
                             }
                             androidx.compose.material3.LinearProgressIndicator(progress = { percentage.coerceIn(0f, 1f) }, Modifier.fillMaxWidth())
                         }

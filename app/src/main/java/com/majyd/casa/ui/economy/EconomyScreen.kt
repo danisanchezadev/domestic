@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -60,6 +59,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -231,20 +232,7 @@ private fun EconomyMonthlySummary(
             Text(EconomyViewModel.formatMonth(month), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold)
             if (loaded) {
                 Box(Modifier.fillMaxWidth()) {
-                    Text(
-                        EconomyViewModel.formatCents(balance),
-                        Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        fontSize = when {
-                            EconomyViewModel.formatCents(balance).length > 16 -> 32.sp
-                            EconomyViewModel.formatCents(balance).length > 12 -> 40.sp
-                            else -> 56.sp
-                        },
-                        fontWeight = FontWeight.ExtraBold,
-                        color = status,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
+                    AdaptiveMoneyText(EconomyViewModel.formatCents(balance), status)
                 }
                 Text(balanceLabel(balance, target, minimum), Modifier.padding(horizontal = 18.dp), fontWeight = FontWeight.Bold)
                 EconomySummaryAmounts(income, expense, investment, Modifier.padding(horizontal = 18.dp))
@@ -256,15 +244,37 @@ private fun EconomyMonthlySummary(
 }
 
 @Composable
+private fun AdaptiveMoneyText(value: String, color: Color) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val availablePx = with(density) { (maxWidth - 16.dp).toPx().coerceAtLeast(1f) }
+        val candidateSizes = listOf(56, 52, 48, 44, 40, 36, 32, 28, 24).map { it.sp }
+        val fontSize = candidateSizes.firstOrNull { size ->
+            textMeasurer.measure(value, style = TextStyle(fontSize = size, fontWeight = FontWeight.ExtraBold)).size.width <= availablePx
+        } ?: 24.sp
+        Text(
+            value,
+            Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            fontSize = fontSize,
+            fontWeight = FontWeight.ExtraBold,
+            color = color,
+            softWrap = true,
+        )
+    }
+}
+
+@Composable
 private fun EconomySummaryAmounts(income: Long, expense: Long, investment: Long, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val fontScale = LocalDensity.current.fontScale
         val compact = maxWidth < 380.dp || fontScale > 1.25f
         if (compact) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SummaryAmount("Ingresos", income, Color(0xFF3B7A4A))
-                SummaryAmount("Gastos", expense, Color(0xFFC44646))
-                SummaryAmount("Inversión", investment, Color(0xFF8E55B8))
+                SummaryAmount("Ingresos", income, Color(0xFF3B7A4A), Modifier.weight(1f))
+                SummaryAmount("Gastos", expense, Color(0xFFC44646), Modifier.weight(1f))
+                SummaryAmount("Inversión", investment, Color(0xFF8E55B8), Modifier.weight(1f))
             }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -277,8 +287,8 @@ private fun EconomySummaryAmounts(income: Long, expense: Long, investment: Long,
 }
 
 @Composable
-private fun SummaryAmount(label: String, amount: Long, color: Color) {
-    Column {
+private fun SummaryAmount(label: String, amount: Long, color: Color, modifier: Modifier = Modifier) {
+    Column(modifier) {
         Text(label, color = color, fontWeight = FontWeight.Bold, maxLines = 1)
         Text(EconomyViewModel.formatCents(amount), color = color, fontWeight = FontWeight.Bold)
     }
@@ -413,20 +423,38 @@ internal fun MovementRow(movement: EconomyMovement, categories: List<EconomyCate
     val amountColor = when (movement.type) { EconomyMovementType.INCOME -> Color(0xFF3B7A4A); EconomyMovementType.INVESTMENT -> Color(0xFF8E55B8); EconomyMovementType.EXPENSE -> Color(0xFFC44646) }
     var menuExpanded by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(12.dp)) {
+            val compact = maxWidth < 360.dp || LocalDensity.current.fontScale > 1.25f
+            val details: @Composable () -> Unit = {
                 Text(category, fontWeight = FontWeight.Bold)
                 Text(economyTypeLabel(movement.type), style = MaterialTheme.typography.bodySmall)
                 Text(EconomyViewModel.formatDate(movement.dateEpochDay), style = MaterialTheme.typography.bodySmall)
             }
-            Column(Modifier.widthIn(max = 160.dp), horizontalAlignment = Alignment.End) {
+            val amount: @Composable () -> Unit = {
                 Text((if (movement.type == EconomyMovementType.INCOME) "+" else "-") + EconomyViewModel.formatCents(movement.amountCents), color = amountColor, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End)
             }
-            Box {
-                IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Filled.MoreVert, "Acciones") }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit() })
-                    DropdownMenuItem(text = { Text("Eliminar") }, onClick = { menuExpanded = false; onDelete() })
+            val actions: @Composable () -> Unit = {
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Filled.MoreVert, "Acciones") }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit() })
+                        DropdownMenuItem(text = { Text("Eliminar") }, onClick = { menuExpanded = false; onDelete() })
+                    }
+                }
+            }
+            if (compact) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(Modifier.weight(1f)) { details() }
+                        actions()
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { amount() }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { details() }
+                    Column(horizontalAlignment = Alignment.End) { amount() }
+                    actions()
                 }
             }
         }
